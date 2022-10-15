@@ -131,3 +131,4 @@ dmypy.json
 # Server and wandb logs
 *.out
 wandb/
+cache/
