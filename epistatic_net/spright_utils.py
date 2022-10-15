@@ -432,7 +432,7 @@ def make_system_simple(support, sampling_locations):
     return M
     
 class SPRIGHT:
-    def __init__(self, experiment_type, run_list, spright_sample: SPRIGHTSample, model_to_remove=None):
+    def __init__(self, experiment_type, run_list, spright_sample, model_to_remove=None):
         
         self.experiment_type = experiment_type
         self.run_list = run_list
