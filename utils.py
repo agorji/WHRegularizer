@@ -1,5 +1,6 @@
 import numpy as np
 from sklearn.model_selection import train_test_split
+from sklearn.metrics import r2_score, mean_squared_error
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -15,9 +16,10 @@ from epistatic_net.spright_utils import SPRIGHT, make_system_simple
 from epistatic_net.wht_sampling import SPRIGHTSample
 
 class FourierDataset(Dataset):
-    def __init__(self, n, k, generation_method="uniform_deg", d=None, p_freq=None, n_samples = 100, p_in=0.5):
+    def __init__(self, n, k, generation_method="uniform_deg", d=None, p_freq=None, n_samples = 100, p_t=0.5, scale_y=True):
         self.n = n
         self.k = k
+        self.scale_y = scale_y
 
         if generation_method == "uniform_deg":
             self.freq_f = self.uniform_deg_freq(d)
@@ -30,7 +32,7 @@ class FourierDataset(Dataset):
 
         self.amp_f = torch.FloatTensor(k).uniform_(-1, 1)
 
-        self.X = (torch.rand(n_samples, n) < p_in).float()
+        self.X = (torch.rand(n_samples, n) < p_t).float()
         self.y = self.compute_y(self.X)
 
     def __len__(self):
@@ -40,8 +42,10 @@ class FourierDataset(Dataset):
         return self.X[i], self.y[i]
 
     def compute_y(self, X):
-        in_dot_f = X @ torch.t(self.freq_f)
-        return torch.sum(torch.where(in_dot_f % 2 == 1, -1, 1) * self.amp_f, axis = -1) / 2**(self.n/2)
+        if not torch.is_tensor(X):
+            X = torch.tensor(X).float()
+        t_dot_f = X @ torch.t(self.freq_f)
+        return torch.sum(torch.where(t_dot_f % 2 == 1, -1, 1) * self.amp_f, axis = -1) / (self.k if self.scale_y else (2**self.n))
     
     def bounded_degree_freq(self, d):
         freqs = torch.zeros(self.k, self.n)
@@ -79,7 +83,7 @@ def get_sample_inputs(n, b):
     hash_sigma = (torch.rand(b, n) < 0.5).float() # multivariate bernouli with p=0.5
     hash_inputs = torch.asarray(list((product((0.0,1.0), repeat=b))))
 
-    sample_inputs = hash_inputs @ hash_sigma
+    sample_inputs = (hash_inputs @ hash_sigma ) % 2
     return sample_inputs
 
 
@@ -140,7 +144,7 @@ class ModelTrainer:
 
         elif training_method == "hashing":
             self.train_epoch = self.hashing_epoch
-            self.H = hadamard_matrix(config["b"], normalize=True).to(device)
+            self.H = hadamard_matrix(config["b"], normalize=False).to(device)
             
         else:
             raise Exception(f"'{training_method}' training method is not yet implemented.")
@@ -155,20 +159,24 @@ class ModelTrainer:
         for epoch in range(self.config["num_epochs"]):
             # Train epoch based on the set training method
             self.model.train()
-            epoch_log = self.train_epoch()
+            y_pred, y_true, epoch_log = self.train_epoch()
+            epoch_log["train_mse_loss"] = mean_squared_error(y_true, y_pred)
+            epoch_log["train_r2"] = r2_score(y_true, y_pred)
 
             # Evaluate the model on validation set
             self.model.eval()
+            y_true, y_pred = [], []
             with torch.no_grad():
-                val_loss = 0
                 for X, y in self.val_loader:
                     X, y = X.to(device), y.to(device)
                     y_hat = self.model(X)
-                    val_loss += F.mse_loss(y, y_hat).item()
-                val_loss /= len(self.val_loader)
-                print(f"#{epoch} - Validation Loss: {val_loss:.3f}")
+                    y_true.extend(y.tolist())
+                    y_pred.extend(y_hat.tolist())
             
-            epoch_log['val_loss']  = val_loss
+            epoch_log["val_mse_loss"] = mean_squared_error(y_true, y_pred)
+            epoch_log["val_r2"] = r2_score(y_true, y_pred)
+            print(f"#{epoch} - Train Loss: {epoch_log['train_mse_loss']:.3f}, R2: {epoch_log['train_r2']:.3f}"\
+                f"\tValidation Loss: {epoch_log['val_mse_loss']:.3f}, R2: {epoch_log['val_r2']:.3f}")
 
             # Log wandb
             if self.log_wandb:
@@ -176,6 +184,7 @@ class ModelTrainer:
     
     def normal_epoch(self):
         device = self.device
+        outputs, ground_truth = [], []
         batch_train_loss = []
         for X, y in self.train_loader:
             self.optim.zero_grad()
@@ -183,23 +192,26 @@ class ModelTrainer:
             y_hat = self.model(X)
             loss = F.mse_loss(y, y_hat)
             batch_train_loss.append(loss)
+            outputs.extend(y_hat.tolist())
+            ground_truth.extend(y.tolist())
 
             loss.backward()
             self.optim.step()
         
-        return {
-            'train_loss': torch.mean(torch.stack(batch_train_loss)).item(),
-        }
+        return outputs, ground_truth, {}
     
     def hashing_epoch(self):
         device = self.device
         batch_train_loss, batch_hadamard_loss = [], []
+        outputs, ground_truth = [], []
         for X, y in self.train_loader:
             self.optim.zero_grad()
             X, y = X.to(device), y.to(device)
             y_hat = self.model(X)
             loss = F.mse_loss(y, y_hat)
             batch_train_loss.append(loss)
+            outputs.extend(y_hat.tolist())
+            ground_truth.extend(y.tolist())
 
             # Find the sample inputs using the hashing scheme
             sample_inputs = get_sample_inputs(self.n, self.config["b"])
@@ -216,20 +228,22 @@ class ModelTrainer:
             loss.backward()
             self.optim.step()
         
-        return {
-            'train_loss': torch.mean(torch.stack(batch_train_loss)).item(),
+        return outputs, ground_truth, {
             'hashing_loss': torch.mean(torch.stack(batch_hadamard_loss)).item(),
         }
     
     def EN_epoch(self):
         device = self.device
         batch_train_loss, batch_hadamard_loss = [], []
+        outputs, ground_truth = [], []
         for X, y in self.train_loader:
             self.optim.zero_grad()
             X, y = X.to(device), y.to(device)
             y_hat = self.model(X)
             loss = F.mse_loss(y, y_hat)
             batch_train_loss.append(loss)
+            outputs.extend(y_hat.tolist())
+            ground_truth.extend(y.tolist())
 
             # Compute the Hadamard transform of all possible inputs and add to loss
             landscape = self.model(self.all_inputs).reshape(-1)
@@ -242,20 +256,22 @@ class ModelTrainer:
             loss.backward()
             self.optim.step()
         
-        return {
-            'train_loss': torch.mean(torch.stack(batch_train_loss)).item(),
+        return outputs, ground_truth, {
             'EN_loss': torch.mean(torch.stack(batch_hadamard_loss)).item(),
         }
     
     def ENS_epoch(self):
         device = self.device
         batch_train_loss, batch_hadamard_loss = [], []
+        outputs, ground_truth = [], []
         for X, y in self.train_loader:
             self.optim.zero_grad()
             X, y = X.to(device), y.to(device)
             y_hat = self.model(X)
             loss = F.mse_loss(y, y_hat)
             batch_train_loss.append(loss)
+            outputs.extend(y_hat.tolist())
+            ground_truth.extend(y.tolist())
 
             wht_out = self.model(torch.tensor(self.X_all, dtype=torch.float)).reshape(-1)
             wht_diff = wht_out - torch.tensor(self.Hu, dtype=torch.float) + torch.tensor(self.lam, dtype=torch.float)
@@ -284,7 +300,6 @@ class ModelTrainer:
             # update the dual 
             self.lam = self.lam + y_hat_all - self.Hu
         
-        return {
-            'train_loss': torch.mean(torch.stack(batch_train_loss)).item(),
+        return outputs, ground_truth, {
             'ENS_loss': torch.mean(torch.stack(batch_hadamard_loss)).item(),
         }

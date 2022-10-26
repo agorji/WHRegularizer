@@ -1,3 +1,4 @@
+import math
 import numpy as np
 import random
 import torch
@@ -40,52 +41,29 @@ class FCN(nn.Module):
 
         return x.reshape(-1)
 
-# Define sweep config
-sweep_configuration = {
-    'method': 'grid',
-    'name': 'fixed_fourier_first',
-    'metric': {'goal': 'minimize', 'name': 'val_loss'},
-    'parameters': {
-        'n': {'values': [16, 48, 128]},
-        'k': {'values': [10, 40, 100]},
-        'b': {'values': [4, 8, 12]},
-        'add_hadamard_loss': {'values': [True]}, 
-        # 'lr': {'max': 0.1, 'min': 0.0001},
-        'lr': {'values': [0.1, 0.01, 0.001, 0.0001]}, 
-        'weight_decay': {'values': [0.0]}, 
-        'hadamard_lambda': {'values': [0.0, 0.1, 0.5, 1.0, 2.0]},
-        'num_epochs': {'values': [50]},
-        'batch_size': {'values': [64]},
-        'dataset_size': {'values': [100, 500, 1000, 10000]},
-    }
-}
-
-# Initialize sweep by passing in config.
-# sweep_id = wandb.sweep(sweep=sweep_configuration, project='SpectralRegularizer')
-
 def main():  
     run = wandb.init()
     print(wandb.config)
 
     n = wandb.config.n
     k = wandb.config.k
+    d = n/8
 
     # Set seeds
-    random_seed = 0
+    random_seed = wandb.config.random_seed
     torch.manual_seed(random_seed)
     random.seed(random_seed)
     np.random.seed(random_seed)
 
     # Dataset
-    dataset = FourierDataset(n, k, d=n/8, n_samples=wandb.config.dataset_size)
+    dataset_size = wandb.config.dataset_size_coef * math.log2(wandb.config.n) * wandb.config.k * d
+    dataset = FourierDataset(n, k, d=d, n_samples=int(dataset_size*(4/3)))
 
     # Train model
     in_dim = dataset.X.shape[1]
     model = FCN(in_dim, 2)
-    trainer = ModelTrainer(model, dataset, training_method="hashing", config=wandb.config)
+    trainer = ModelTrainer(model, dataset, training_method="hashing", config=wandb.config, log_wandb=True)
     model = trainer.train_model()
 
 if __name__ == "__main__":
-    # Start sweep job.
-    # wandb.agent(sweep_id, function=main)
     main()

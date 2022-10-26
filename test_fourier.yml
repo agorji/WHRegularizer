@@ -1,9 +1,9 @@
 program: test_fourier.py
 method: grid
-name: fixed_fourier_first
+name: stabilized_hashing
 metric:
-  goal: minimize
-  name: val_loss
+  goal: maximize
+  name: val_r2
 parameters:
   n:
     values: [16, 48, 128]
@@ -11,17 +11,17 @@ parameters:
     values: [10, 40, 100]
   b:
     values: [4, 8, 12]
-  add_hadamard_loss:
-    values: [True]
   lr:
-    values: [0.1, 0.01, 0.001, 0.0001]
+    values: [1, 0.1, 0.01, 0.001, 0.0001]
   weight_decay:
     values: [0.0]
   hadamard_lambda:
-    values: [0.0, 0.1, 0.5, 1.0, 2.0]
+    values: [0.0, 0.001, 0.01, 0.1]
   num_epochs:
     values: [50]
   batch_size:
     values: [64]
-  dataset_size:
-    values: [100, 500, 1000, 10000]
+  dataset_size_coef:
+    values: [1, 2, 5, 10]
+  random_seed:
+    values: [0]
