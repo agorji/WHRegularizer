@@ -42,8 +42,6 @@ class FourierDataset(Dataset):
         return self.X[i], self.y[i]
 
     def compute_y(self, X):
-        if not torch.is_tensor(X):
-            X = torch.tensor(X).float()
         t_dot_f = X @ torch.t(self.freq_f)
         return torch.sum(torch.where(t_dot_f % 2 == 1, -1, 1) * self.amp_f, axis = -1) / (self.k if self.scale_y else (2**self.n))
     
@@ -88,8 +86,8 @@ def get_sample_inputs(n, b):
 
 
 class ModelTrainer:
-    def __init__(self, model: nn.Module, dataset: Dataset, config: Dict, training_method: str,
-                p_test = 0.25, device = "cuda", log_wandb = False):
+    def __init__(self, model: nn.Module, dataset: Dataset, config: Dict, p_test = 0.25, 
+                    device = "cuda", log_wandb = False):
         '''
             Trains a torch model given the dataset and the training method.
 
@@ -118,6 +116,7 @@ class ModelTrainer:
         self.n = next(iter(self.val_loader))[0].shape[1] # original space dimension
 
         # Training method
+        training_method = config["training_method"]
         if training_method == "normal":
             self.train_epoch = self.normal_epoch
 
@@ -262,6 +261,7 @@ class ModelTrainer:
     
     def ENS_epoch(self):
         device = self.device
+        l2_loss = nn.MSELoss()
         batch_train_loss, batch_hadamard_loss = [], []
         outputs, ground_truth = [], []
         for X, y in self.train_loader:
@@ -273,9 +273,9 @@ class ModelTrainer:
             outputs.extend(y_hat.tolist())
             ground_truth.extend(y.tolist())
 
-            wht_out = self.model(torch.tensor(self.X_all, dtype=torch.float)).reshape(-1)
-            wht_diff = wht_out - torch.tensor(self.Hu, dtype=torch.float) + torch.tensor(self.lam, dtype=torch.float)
-            reg_loss = self.config["rho"]/2 * nn.MSELoss(wht_diff,torch.zeros_like(wht_diff))
+            wht_out = self.model(torch.tensor(self.X_all, dtype=torch.float, device=device)).reshape(-1)
+            wht_diff = wht_out - torch.tensor(self.Hu, dtype=torch.float, device=device) + torch.tensor(self.lam, dtype=torch.float, device=device)
+            reg_loss = self.config["rho"]/2 * l2_loss(wht_diff,torch.zeros_like(wht_diff))
             loss += self.config["hadamard_lambda"] * reg_loss
             batch_hadamard_loss.append(reg_loss)
 
@@ -283,13 +283,13 @@ class ModelTrainer:
             self.optim.step()
         
         with torch.no_grad():
-            y_hat_all = self.model(torch.from_numpy(self.X_all).float())
-        y_hat_all = y_hat_all.numpy().flatten()
+            y_hat_all = self.model(torch.from_numpy(self.X_all).float().to(device))
+        y_hat_all = y_hat_all.cpu().numpy().flatten()
 
         # run spright to do fast sparse WHT
         spright = SPRIGHT('frame', [1,2,3], self.spright_sample)
         spright.set_train_data(self.X_all,  y_hat_all + self.lam, self.X_all_inverse_ind)
-        spright.model_to_remove = self.model
+        # spright.model_to_remove = self.model
         flag = spright.initial_run()
         if flag:
             spright.peel_rest()

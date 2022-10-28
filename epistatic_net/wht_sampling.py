@@ -79,6 +79,10 @@ class SPRIGHTSample:
                     so one needs to play around with this a bit
 
         '''
+        self.n = n
+        self.m = m
+        self.d = d
+
         self.sampling_matrices = []
         self.delay_matrices = []
         self.sampling_locations = []
@@ -97,7 +101,7 @@ class SPRIGHTSample:
                     print(f"- Loded {file} from cache (delay matrix)")
                 for file in list(glob.glob(f'{sample_dir}/sampling-locations-*')):
                     self.sampling_locations.append(pickle.load(open(file,'rb')))
-                    print(f"- Loded {file} from cache (samling location)")
+                    print(f"- Loded {file} from cache (sampling location)")
                 
                 return
 

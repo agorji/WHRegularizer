@@ -374,7 +374,7 @@ class SparseWHTModel:
     
     
     
-def get_candidate_locations(measurement_matrix, sampling_matrix=None):
+def get_candidate_locations(measurement_matrix, sampling_matrix=None, num_delays_per_bit=3):
     """
     measurement_matrix:
     sampling_matrix:    if sampling matrix is given check if the found location
@@ -387,7 +387,7 @@ def get_candidate_locations(measurement_matrix, sampling_matrix=None):
     #for i in tqdm(range(measurement_matrix.shape[1])):
     for i in range(measurement_matrix.shape[1]):
         # this is the estimated location
-        location_hat = estimate_location(measurement_matrix[:, i], num_bits=sampling_matrix.shape[1])
+        location_hat = estimate_location(measurement_matrix[:, i], num_bits=sampling_matrix.shape[1], num_delays_per_bit=num_delays_per_bit)
 
         if sampling_matrix is not None:
             aliased_bin = bin_to_dec(location_to_bin(sampling_matrix, pm_to_zo(location_hat)))
@@ -437,6 +437,8 @@ class SPRIGHT:
         self.experiment_type = experiment_type
         self.run_list = run_list
         self.model_to_remove = model_to_remove
+
+        self.d = spright_sample.d
         
         self.sampling_matrix1 = spright_sample.sampling_matrices[0]
         self.sampling_matrix2 = spright_sample.sampling_matrices[1]
@@ -504,9 +506,9 @@ class SPRIGHT:
                 measurement_matrix[i] = myfwht(ins_result[i])
 
             if use_sampling_matrix:
-                locs, evals = get_candidate_locations(measurement_matrix, sampling_matrix)
+                locs, evals = get_candidate_locations(measurement_matrix, sampling_matrix, num_delays_per_bit=self.d)
             else:
-                locs, evals = get_candidate_locations(measurement_matrix)
+                locs, evals = get_candidate_locations(measurement_matrix, num_delays_per_bit=self.d)
 
             likely_indices = evals > 0
 
@@ -574,7 +576,7 @@ class SPRIGHT:
 
             # go through all the bins in the stage
             for bin_index, bin_measurement in M_dictionary.items():
-                location_hat = estimate_location(bin_measurement, num_bits=A.shape[1])
+                location_hat = estimate_location(bin_measurement, num_bits=A.shape[1], num_delays_per_bit=self.d)
                 aliased_bin = bin_to_dec(location_to_bin(A, pm_to_zo(location_hat)))
 
                 if aliased_bin == bin_index:
