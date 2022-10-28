@@ -127,7 +127,7 @@ class ModelTrainer:
 
         elif training_method == "EN-S":
             self.train_epoch = self.ENS_epoch
-            self.spright_sample = SPRIGHTSample(self.n, config["SPRIGHT_m"], config["SPRIGHT_d"])
+            self.spright_sample = SPRIGHTSample(self.n, config["SPRIGHT_m"], config["SPRIGHT_d"], random_seed=config["random_seed"])
             self.X_all = np.concatenate(
                 (
                     np.vstack(self.spright_sample.sampling_locations[0]),

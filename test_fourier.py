@@ -47,22 +47,25 @@ def main():
 
     n = wandb.config.n
     k = wandb.config.k
-    d = n/8
+    d = n/5
+    config = wandb.config
+    if config["training_method"] == "EN-S":
+        config["SPRIGHT_m"] = math.ceil(math.log2(k))
 
     # Set seeds
-    random_seed = wandb.config.random_seed
+    random_seed = config["random_seed"]
     torch.manual_seed(random_seed)
     random.seed(random_seed)
     np.random.seed(random_seed)
 
     # Dataset
-    dataset_size = wandb.config.dataset_size_coef * math.log2(wandb.config.n) * wandb.config.k * d
+    dataset_size = config["dataset_size_coef"] * k * n
     dataset = FourierDataset(n, k, d=d, n_samples=int(dataset_size*(4/3)))
 
     # Train model
     in_dim = dataset.X.shape[1]
     model = FCN(in_dim, 2)
-    trainer = ModelTrainer(model, dataset, training_method="hashing", config=wandb.config, log_wandb=True)
+    trainer = ModelTrainer(model, dataset, config=config, log_wandb=True)
     model = trainer.train_model()
 
 if __name__ == "__main__":
