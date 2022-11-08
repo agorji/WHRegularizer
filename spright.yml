@@ -1,6 +1,6 @@
 program: test_fourier.py
 method: grid
-name: hyperparameter_tuning
+name: big_n_spright
 metric:
   goal: maximize
   name: val_r2
@@ -8,9 +8,11 @@ parameters:
   training_method:
     values: ['EN-S']
   n:
-    values: [10, 15, 20, 25]
+    values: [50, 75, 100]
   k:
     values: [10, 50, 100]
+  hashing_discount:
+    values: [1, 2, 4]
   SPRIGHT_d:
     values: [3, 5, 7]
   rho:
@@ -19,13 +21,17 @@ parameters:
     values: [0.01, 0.1, 1]
   lr:
     values: [0.01]
+  scheduler_step_size:
+    values: [25, 50, 300]
+  scheduler_gamma:
+    values: [0.5]
   weight_decay:
     values: [0.0]
   num_epochs:
     values: [200]
-  batch_size:
-    values: [64]
+  epoch_iterations:
+    values: [50]
   dataset_size_coef:
-    values: [1, 2, 5, 10]
+    values: [10, 20, 50, 100]
   random_seed:
-    values: [11, 22, 33, 44]
+    values: [11, 22, 33, 44, 55]

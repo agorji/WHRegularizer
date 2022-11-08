@@ -49,8 +49,7 @@ def main():
     k = wandb.config.k
     d = n/5
     config = wandb.config
-    if config["training_method"] == "EN-S":
-        config["SPRIGHT_m"] = math.ceil(math.log2(k))
+    config["b"] = math.ceil(math.log2(k)) + config.get("hashing_discount", 0)
 
     # Set seeds
     random_seed = config["random_seed"]
@@ -61,6 +60,13 @@ def main():
     # Dataset
     dataset_size = config["dataset_size_coef"] * k * n
     dataset = FourierDataset(n, k, d=d, n_samples=int(dataset_size*(4/3)))
+
+    # Set batch size
+    config["batch_size"] = math.ceil(dataset / config["epoch_iterations"])
+    a = 1
+    while(a < config["batch_size"]):
+        a *= 2
+    config["batch_size"] = a
 
     # Train model
     in_dim = dataset.X.shape[1]

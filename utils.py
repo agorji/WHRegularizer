@@ -4,34 +4,38 @@ import seaborn as sns
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.utils.data import Dataset, DataLoader, random_split
+from torch.utils.data import Dataset, DataLoader, TensorDataset, random_split
 from torch.optim.lr_scheduler import StepLR
 from typing import Dict, List
 
 from itertools import product
 import math
 import random
+import time
 import wandb
 
 from epistatic_net.spright_utils import SPRIGHT, make_system_simple
 from epistatic_net.wht_sampling import SPRIGHTSample
 
 class FourierDataset(Dataset):
-    def __init__(self, n, k, generation_method="uniform_deg", d=None, p_freq=None, n_samples = 100, p_t=0.5, scale_y=True):
+    def __init__(self, n, k, freq_sampling_method="uniform_deg", amp_sampling_method="random", d=None, p_freq=None, n_samples = 100, p_t=0.5, scale_y=True):
         self.n = n
         self.k = k
         self.scale_y = scale_y
 
-        if generation_method == "uniform_deg":
+        if freq_sampling_method == "uniform_deg":
             self.freq_f = self.uniform_deg_freq(d)
-        elif generation_method == "bernouli":
+        elif freq_sampling_method == "bernouli":
             self.freq_f = self.bernouli_freq(p_freq)
-        elif generation_method == "bounded_deg":
+        elif freq_sampling_method == "bounded_deg":
             self.freq_f = self.bounded_degree_freq(d)
         else:
-            raise Exception(f'"{generation_method}" is not a generation method for FourierDataset.')
+            raise Exception(f'"{freq_sampling_method}" is not a generation method for FourierDataset.')
 
-        self.amp_f = torch.FloatTensor(k).uniform_(-1, 1)
+        if amp_sampling_method == "random":
+            self.amp_f = torch.FloatTensor(k).uniform_(-1, 1)
+        elif amp_sampling_method == "constant":
+            self.amp_f = torch.ones(k)
 
         self.X = (torch.rand(n_samples, n) < p_t).float()
         self.y = self.compute_y(self.X)
@@ -147,7 +151,7 @@ class ModelTrainer:
 
         elif training_method == "EN-S":
             self.train_epoch = self.ENS_epoch
-            self.spright_sample = SPRIGHTSample(self.n, config["SPRIGHT_m"], config["SPRIGHT_d"], random_seed=config["random_seed"])
+            self.spright_sample = SPRIGHTSample(self.n, config["b"], config["SPRIGHT_d"], random_seed=config["random_seed"])
             self.X_all = np.concatenate(
                 (
                     np.vstack(self.spright_sample.sampling_locations[0]),
@@ -156,6 +160,8 @@ class ModelTrainer:
                 )
             )
             self.X_all, self.X_all_inverse_ind = np.unique(self.X_all, axis=0, return_inverse='True')
+            X_all_ds = TensorDataset(torch.from_numpy(self.X_all).to("cpu"), torch.zeros(self.X_all.shape[0], device="cpu"))
+            self.X_all_loader = DataLoader(X_all_ds, batch_size=10240)
 
             # initialzie ADMM 
             self.Hu = np.zeros(len(self.X_all))
@@ -199,11 +205,14 @@ class ModelTrainer:
         for epoch in range(self.config["num_epochs"]):
             # Train epoch based on the set training method
             self.model.train()
+            epoch_start = time.time()
             RSS, epoch_log = self.train_epoch()
+            epoch_log["train_time"] = time.time() - epoch_start
             epoch_log["train_mse_loss"] = RSS / self.train_size
             epoch_log["train_r2"] = 1 - RSS / self.train_tss
 
             # Evaluate the model on validation set
+            val_start = time.time()
             self.model.eval()
             with torch.no_grad():
                 RSS = 0
@@ -221,12 +230,16 @@ class ModelTrainer:
             
             epoch_log["val_mse_loss"] = RSS / self.val_size
             epoch_log["val_r2"] = 1 - RSS / self.val_tss
+            epoch_log["val_time"] = time.time() - val_start
             if self.print_logs:
                 print(f"#{epoch} - Train Loss: {epoch_log['train_mse_loss']:.3f}, R2: {epoch_log['train_r2']:.3f}"\
                     f"\tValidation Loss: {epoch_log['val_mse_loss']:.3f}, R2: {epoch_log['val_r2']:.3f}")
 
             # Log wandb
             self.logs.append(epoch_log)
+            epoch_log["max_val_r2"] = max([l["val_r2"] for l in self.logs])
+            epoch_log["min_val_mse_loss"] = min([l["val_mse_loss"] for l in self.logs])
+
             if self.log_wandb:
                 wandb.log(epoch_log)
             
@@ -270,6 +283,7 @@ class ModelTrainer:
     def hashing_epoch(self):
         device = self.device
         batch_train_loss, batch_hadamard_loss = [], []
+        hadamard_times = []
         RSS = 0
         for X, y in self.train_loader:
             self.optim.zero_grad()
@@ -284,10 +298,12 @@ class ModelTrainer:
             sample_inputs = sample_inputs.to(device)
 
             # Compute the Hadamard transform of sample_inputs and add to loss
+            hadamard_start = time.time()
             X = self.model(sample_inputs)
             Y = self.H @ X
-
             hadamard_loss = F.l1_loss(Y, torch.zeros_like(Y))
+
+            hadamard_times.append(time.time() - hadamard_start)
             batch_hadamard_loss.append(hadamard_loss)
             loss += self.config["hadamard_lambda"] * hadamard_loss
 
@@ -295,12 +311,15 @@ class ModelTrainer:
             self.optim.step()
         
         return RSS, {
+            'hadamard_time': sum(hadamard_times),
+            'hadamard_iteration_time': np.mean(hadamard_times),
             'hashing_loss': torch.mean(torch.stack(batch_hadamard_loss)).item(),
         }
     
     def EN_epoch(self):
         device = self.device
         batch_train_loss, batch_hadamard_loss = [], []
+        hadamard_times = []
         RSS = 0
         for X, y in self.train_loader:
             self.optim.zero_grad()
@@ -311,9 +330,11 @@ class ModelTrainer:
             RSS += torch.sum((y_hat-y)**2).item()
 
             # Compute the Hadamard transform of all possible inputs and add to loss
+            hadamard_start = time.time()
             landscape = self.model(self.all_inputs).reshape(-1)
             spectrum = torch.matmul(self.H, landscape)
             reg_loss = F.l1_loss(spectrum, torch.zeros_like(spectrum))
+            hadamard_times.append(time.time() - hadamard_start)
 
             batch_hadamard_loss.append(reg_loss)
             loss += self.config["hadamard_lambda"] * reg_loss
@@ -322,6 +343,8 @@ class ModelTrainer:
             self.optim.step()
         
         return RSS, {
+            'hadamard_time': sum(hadamard_times),
+            'hadamard_iteration_time': np.mean(hadamard_times),
             'EN_loss': torch.mean(torch.stack(batch_hadamard_loss)).item(),
         }
     
@@ -330,6 +353,7 @@ class ModelTrainer:
         l2_loss = nn.MSELoss()
         batch_train_loss, batch_hadamard_loss = [], []
         RSS = 0
+        network_update_time = time.time()
         for X, y in self.train_loader:
             self.optim.zero_grad()
             X, y = X.to(device), y.to(device)
@@ -346,12 +370,19 @@ class ModelTrainer:
 
             loss.backward()
             self.optim.step()
+        network_update_time = time.time() - network_update_time
         
+        hadamard_start = time.time()
+
         with torch.no_grad():
-            y_hat_all = self.model(torch.from_numpy(self.X_all).float().to(device))
-        y_hat_all = y_hat_all.cpu().numpy().flatten()
+            y_hat_alls = []
+            for X, _ in self.X_all_loader:
+                y_hat_all = self.model(X.float().to(device))
+                y_hat_alls.append(y_hat_all.cpu().numpy().flatten())
+        y_hat_all = np.concatenate(y_hat_alls)
 
         # run spright to do fast sparse WHT
+        fourier_start = time.time()
         spright = SPRIGHT('frame', [1,2,3], self.spright_sample)
         spright.set_train_data(self.X_all,  y_hat_all + self.lam, self.X_all_inverse_ind)
         # spright.model_to_remove = self.model
@@ -366,5 +397,8 @@ class ModelTrainer:
             self.lam = self.lam + y_hat_all - self.Hu
         
         return RSS, {
+            'network_update_time': network_update_time,
+            'hadamard_time': time.time() - hadamard_start,
+            'fourier_time': time.time() - fourier_start,
             'ENS_loss': torch.mean(torch.stack(batch_hadamard_loss)).item(),
         }
