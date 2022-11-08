@@ -62,9 +62,9 @@ def main():
     dataset = FourierDataset(n, k, d=d, n_samples=int(dataset_size*(4/3)))
 
     # Set batch size
-    config["batch_size"] = math.ceil(dataset / config["epoch_iterations"])
+    batch_size = dataset_size / config["epoch_iterations"]
     a = 1
-    while(a < config["batch_size"]):
+    while(a < batch_size):
         a *= 2
     config["batch_size"] = a
 
