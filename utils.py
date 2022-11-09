@@ -1,6 +1,7 @@
 import matplotlib.pyplot as plt
 import numpy as np
 import seaborn as sns
+from sklearn.metrics import r2_score
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -227,6 +228,10 @@ class ModelTrainer:
                     landscape = self.model(all_inputs.to(device))
                     fourier_spectrum = self.original_H @ landscape
                     spectrums.append(fourier_spectrum.cpu().numpy())
+
+                    # Log R2 of learned amps
+                    learned_amps = spectrums[-1][self.dataset.get_int_freqs()]
+                    epoch_log["amp_r2"] = r2_score(self.dataset.amp_f.cpu().numpy(), learned_amps)
             
             epoch_log["val_mse_loss"] = RSS / self.val_size
             epoch_log["val_r2"] = 1 - RSS / self.val_tss
@@ -239,6 +244,8 @@ class ModelTrainer:
             self.logs.append(epoch_log)
             epoch_log["max_val_r2"] = max([l["val_r2"] for l in self.logs])
             epoch_log["min_val_mse_loss"] = min([l["val_mse_loss"] for l in self.logs])
+            if self.report_epoch_fourier:
+                epoch_log["max_amp_r2"] = max([l["amp_r2"] for l in self.logs])
 
             if self.log_wandb:
                 wandb.log(epoch_log)

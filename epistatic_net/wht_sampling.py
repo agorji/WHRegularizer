@@ -88,7 +88,7 @@ class SPRIGHTSample:
         self.sampling_locations = []
 
         sample_name = f'N{n}-m{m}-d{d}-seed{random_seed}'
-        sample_dir = f'cache/{sample_name}'
+        sample_dir = f'{os.environ.get("SPRIGHT_CACHE") if "SPRIGHT_CACHE" in os.environ else "cache"}/{sample_name}'
 
         # Load from cache if possible
         if use_cache:
