@@ -93,15 +93,13 @@ class SPRIGHTSample:
         # Load from cache if possible
         if use_cache:
             if len(list(glob.glob(sample_dir))) > 0:
+                print("Loading SPRIGHT samples from cache ...")
                 for file in list(glob.glob(f'{sample_dir}/sampling-matrix-*')):
                     self.sampling_matrices.append(pickle.load(open(file,'rb')))
-                    print(f"- Loded {file} from cache (sampling matrix)")
                 for file in list(glob.glob(f'{sample_dir}/delays-*')):
                     self.delay_matrices.append(pickle.load(open(file,'rb')))
-                    print(f"- Loded {file} from cache (delay matrix)")
                 for file in list(glob.glob(f'{sample_dir}/sampling-locations-*')):
                     self.sampling_locations.append(pickle.load(open(file,'rb')))
-                    print(f"- Loded {file} from cache (sampling location)")
                 
                 return
 

@@ -240,17 +240,17 @@ class ModelTrainer:
                 print(f"#{epoch} - Train Loss: {epoch_log['train_mse_loss']:.3f}, R2: {epoch_log['train_r2']:.3f}"\
                     f"\tValidation Loss: {epoch_log['val_mse_loss']:.3f}, R2: {epoch_log['val_r2']:.3f}")
 
-            # Log wandb
             self.logs.append(epoch_log)
             epoch_log["max_val_r2"] = max([l["val_r2"] for l in self.logs])
             epoch_log["min_val_mse_loss"] = min([l["val_mse_loss"] for l in self.logs])
             if self.report_epoch_fourier:
                 epoch_log["max_amp_r2"] = max([l["amp_r2"] for l in self.logs])
-
-            if self.log_wandb:
-                wandb.log(epoch_log)
             
             self.scheduler.step()
+
+        if self.log_wandb:
+            for epoch_log in self.logs:
+                wandb.log(epoch_log)
         
         if self.plot_results:
             self.plot_logs()
