@@ -46,7 +46,7 @@ class FCN(nn.Module):
 
         return x.reshape(-1)
 
-def main():  
+def main():
     run = wandb.init()
     print(wandb.config)
 
@@ -54,30 +54,34 @@ def main():
     k = wandb.config.k
     d = math.ceil(n/3)
     config = wandb.config
+    config["d"] = d
     config["b"] = math.ceil(math.log2(k)) + config.get("hashing_discount", 0)
 
-    # Set seeds
-    random_seed = config["random_seed"]
-    torch.manual_seed(random_seed)
-    random.seed(random_seed)
-    np.random.seed(random_seed)
-
     # Dataset
-    dataset_size = config["dataset_size_coef"] * k * n
-    dataset = FourierDataset(n, k, d=d, n_samples=int(dataset_size*(4/3)))
+    config["train_size"] = config["dataset_size_coef"] * k * n
+    config["val_size"] = config["dataset_size_coef"] * k * n
+    dataset_size = config["train_size"] + config["val_size"]
+    dataset = FourierDataset(n, k, d=d, n_samples=dataset_size, random_seed=config["random_seed"])
+    train_ds = torch.utils.data.Subset(dataset, list(range(config["train_size"])))
+    val_ds = torch.utils.data.Subset(dataset, list(range(config["train_size"], dataset_size)))
 
     # Set batch size
     config["epoch_iterations"] = config["SPRIGHT_d"]
-    batch_size = dataset_size / config["epoch_iterations"]
+    batch_size = config["train_size"] / config["epoch_iterations"]
     a = 1
-    while(a < batch_size):
+    while(a * 1.25 < batch_size):
         a *= 2
     config["batch_size"] = a
 
     # Train model
+    remove_from_train_config = ["hashing_discount", "dataset_size_coef", "val_size", "epoch_iterations"]
+    train_config = {k:v for k, v in config.items() if k not in remove_from_train_config}    
+
     in_dim = dataset.X.shape[1]
     model = FCN(in_dim, 2)
-    trainer = ModelTrainer(model, dataset, config=config, log_wandb=True, report_epoch_fourier=True)
+    args = {"int_freqs": dataset.get_int_freqs(), "amps":dataset.amp_f.cpu().numpy()}
+    trainer = ModelTrainer(model, train_ds, val_ds, config=train_config, log_wandb=True, report_epoch_fourier=True, 
+                            experiment_name="test_fourier", **args)
     spectrums = trainer.train_model()
 
 if __name__ == "__main__":

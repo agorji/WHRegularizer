@@ -1,3 +1,4 @@
+from itertools import product
 import matplotlib.pyplot as plt
 import numpy as np
 import seaborn as sns
@@ -5,12 +6,15 @@ from sklearn.metrics import r2_score
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.utils.data import Dataset, DataLoader, TensorDataset, random_split
+from torch.utils.data import Dataset, DataLoader, TensorDataset
 from torch.optim.lr_scheduler import StepLR
 from typing import Dict, List
 
-from itertools import product
+import glob
+import hashlib
+import json
 import math
+import os
 import random
 import time
 import wandb
@@ -19,27 +23,53 @@ from epistatic_net.spright_utils import SPRIGHT, make_system_simple
 from epistatic_net.wht_sampling import SPRIGHTSample
 
 class FourierDataset(Dataset):
-    def __init__(self, n, k, freq_sampling_method="uniform_deg", amp_sampling_method="random", d=None, p_freq=None, n_samples = 100, p_t=0.5, scale_y=True):
+    def __init__(self, n, k, freq_sampling_method="uniform_deg", amp_sampling_method="random", d=None, p_freq=None, n_samples = 100, p_t=0.5, 
+                random_seed=0, use_cache=True):
         self.n = n
         self.k = k
-        self.scale_y = scale_y
+        self.d = d
+        self.n_samples = n_samples
+        self.random_seed = random_seed
+        self.freq_sampling_method = freq_sampling_method
+        self.amp_sampling_method = amp_sampling_method
 
+        # Check if n_samples makes sense
+        if n_samples > 2**self.n:
+            raise Exception(f"Can't generate a dataset of size {n_samples} for a space with n={self.n}")
+
+        # Load from cache if possible
+        if use_cache:
+            if self.load_from_cache():
+                return
+
+        self.generator = torch.Generator()
+        self.generator.manual_seed(random_seed)
+
+        # Freqs
         if freq_sampling_method == "uniform_deg":
             self.freq_f = self.uniform_deg_freq(d)
         elif freq_sampling_method == "bernouli":
             self.freq_f = self.bernouli_freq(p_freq)
-        elif freq_sampling_method == "bounded_deg":
-            self.freq_f = self.bounded_degree_freq(d)
         else:
-            raise Exception(f'"{freq_sampling_method}" is not a generation method for FourierDataset.')
+            raise Exception(f'"{freq_sampling_method}" is not a generation method supported in FourierDataset.')
 
+        # Amplitudes
         if amp_sampling_method == "random":
-            self.amp_f = torch.FloatTensor(k).uniform_(-1, 1)
+            self.amp_f = torch.FloatTensor(k).uniform_(-1, 1, generator=self.generator)
         elif amp_sampling_method == "constant":
             self.amp_f = torch.ones(k)
 
-        self.X = (torch.rand(n_samples, n) < p_t).float()
+        # Data
+        self.X = (torch.rand(n_samples, n, generator=self.generator) < p_t).float()
+        ## --- deduplicating data
+        self.X = torch.unique(self.X, dim=0)
+        while self.X.shape[0] < n_samples:
+            self.X = torch.vstack([self.X, (torch.rand(n_samples - self.X.shape[0], n, generator=self.generator) < p_t).float()])
+            self.X = torch.unique(self.X, dim=0)
         self.y = self.compute_y(self.X)
+
+        if use_cache:
+            self.cache()
 
     def __len__(self):
         return len(self.X)
@@ -49,29 +79,65 @@ class FourierDataset(Dataset):
 
     def compute_y(self, X):
         t_dot_f = X @ torch.t(self.freq_f)
-        return torch.sum(torch.where(t_dot_f % 2 == 1, -1, 1) * self.amp_f, axis = -1) / (self.k if self.scale_y else (2**self.n))
-    
-    def bounded_degree_freq(self, d):
-        freqs = torch.zeros(self.k, self.n)
-        one_indices = [(i, random.randrange(self.n)) for j in range(d) for i in range(self.k)]
-        freqs[list(zip(*one_indices))] = 1.0
-        return freqs
+        return torch.sum(torch.where(t_dot_f % 2 == 1, -1, 1) * self.amp_f, axis = -1) / self.k
 
     def bernouli_freq(self, p):
-        return (torch.rand(self.k, self.n) < p).float()
+        return (torch.rand(self.k, self.n, generator=self.generator) < p).float()
 
     def uniform_deg_freq(self, d):
         freqs = []
+        weights = torch.ones(self.n)
         for i in range(self.k):
-            deg = random.randint(1, d)
+            deg = torch.randint(1, d+1, (1,),  generator=self.generator).item()
             is_duplicate = True
             while is_duplicate:
-                one_indices = random.sample(range(self.n), deg)
-                new_f = [1.0 if i in one_indices else 0.0 for i in range(self.n)]
+                one_indices = torch.multinomial(weights, deg, generator=self.generator)
+                new_f = torch.zeros(self.n).float()
+                new_f[one_indices] = 1.0
+                new_f = new_f.tolist()
+
                 if new_f not in freqs:
                     freqs.append(new_f)
                     is_duplicate = False
-        return torch.tensor(freqs)
+        return torch.tensor(freqs).float()
+    
+    def get_cache_dir(self):
+        data_directory = os.environ.get("EXPERIMENT_DATA") if "EXPERIMENT_DATA" in os.environ else os.getcwd()
+
+        dataset_dir = f"{data_directory}/datasets/n{self.n}_k{self.k}_d{self.d}/"
+        if not os.path.exists(dataset_dir):
+            os.makedirs(dataset_dir)
+        
+        return dataset_dir
+    
+    def get_cache_file_name(self):
+        return f'{self.n_samples}_seed{self.random_seed}_{self.freq_sampling_method}_{self.amp_sampling_method}.pth'
+    
+    def cache(self):
+        model_dir = self.get_cache_dir()
+        cache_file_name = self.get_cache_file_name()
+
+        data = { 
+                'X': self.X,
+                'y': self.y,
+                'freqs': self.freq_f,
+                'amps': self.amp_f,
+            }
+        torch.save(data, f'{model_dir}/{cache_file_name}')
+    
+    def load_from_cache(self):
+        model_dir = self.get_cache_dir()
+        cache_file_name = self.get_cache_file_name()
+        dataset_file = f'{model_dir}/{cache_file_name}'
+        if os.path.exists(dataset_file):
+            loaded_data = torch.load(dataset_file)
+            self.X = loaded_data["X"]
+            self.y = loaded_data["y"]
+            self.freq_f = loaded_data["freqs"]
+            self.amp_f = loaded_data["amps"]
+            return True
+        else:
+            return False
 
     def get_int_freqs(self):
         return self.freq_f.cpu().numpy().dot(2**np.arange(self.n)[::-1]).astype(int)
@@ -101,10 +167,17 @@ def get_sample_inputs(n, b):
     sample_inputs = (hash_inputs @ hash_sigma ) % 2
     return sample_inputs
 
+def hash_dict(dictionary):
+    """MD5 hash of a dictionary."""
+    dhash = hashlib.md5()
+    encoded = json.dumps(dictionary, sort_keys=True).encode()
+    dhash.update(encoded)
+    return dhash.hexdigest()
+
 
 class ModelTrainer:
-    def __init__(self, model: nn.Module, dataset: Dataset, config: Dict, p_val = 0.25, device = "cuda", 
-                    log_wandb = False, report_epoch_fourier=False, print_logs=True, plot_results=False):
+    def __init__(self, model: nn.Module, train_ds: Dataset, val_ds: Dataset, config: Dict, device = "cuda", log_wandb = False, checkpoint_cache=True, checkpoint_interval=5,
+                    report_epoch_fourier=False, print_logs=True, plot_results=False, experiment_name="default", **kwargs):
         '''
             Trains a torch model given the dataset and the training method.
 
@@ -114,7 +187,6 @@ class ModelTrainer:
                 - training_method: training method to use for training which usually sets how the loss should
                                 be calculated in each epoch
                 - config: a config dictionary that includes all the hyperparameters for training
-                - p_test: relative size of the validation dataset
                 - device: torch device used for the training
                 - log_wandb: sets whether log results through wandb
                 - report_epoch_fourier: sets if the exact Fourier transform of the model should be computed
@@ -125,17 +197,24 @@ class ModelTrainer:
         self.model = model
         self.config = config
         self.log_wandb = log_wandb
-        self.dataset = dataset
+        self.train_ds = train_ds
+        self.val_ds = val_ds
         self.report_epoch_fourier = report_epoch_fourier
         self.logs = []
         self.plot_results = plot_results
         self.print_logs = print_logs
+        self.checkpoint_cache = checkpoint_cache
+        self.checkpoint_interval = checkpoint_interval
+        self.experiment_name = experiment_name
+        self.args = kwargs
+
+        # Set seeds
+        random_seed = config["random_seed"]
+        torch.manual_seed(random_seed)
+        random.seed(random_seed)
+        np.random.seed(random_seed)
 
         # Dataloader
-        self.val_size = int(p_val * len(self.dataset))
-        self.train_size = len(self.dataset) - self.val_size
-        train_ds, val_ds = random_split(self.dataset, lengths=[self.train_size, self.val_size])
-
         self.train_loader = DataLoader(train_ds, batch_size=config["batch_size"], shuffle=True)
         self.val_loader = DataLoader(val_ds, batch_size=config["batch_size"], shuffle=True)
         self.n = next(iter(self.val_loader))[0].shape[1] # original space dimension
@@ -184,6 +263,8 @@ class ModelTrainer:
             self.original_H = hadamard_matrix(self.n, normalize=True).to(device)
 
         # Calculating R2
+        self.train_size = len(train_ds)
+        self.val_size = len(val_ds)
         train_mean_y = sum([torch.sum(y).item() for _, y in self.train_loader]) / len(train_ds)
         val_mean_y = sum([torch.sum(y).item() for _, y in self.val_loader]) / len(val_ds)
         self.train_tss = sum([torch.sum((y-train_mean_y)**2).item() for _, y in self.train_loader])
@@ -191,7 +272,7 @@ class ModelTrainer:
 
     def train_model(self):
         device = self.device
-        spectrums = []
+        self.spectrums = []
         self.model.to(device)
 
         # Compute the Fourier spectrum of Model before training
@@ -201,9 +282,14 @@ class ModelTrainer:
                 all_inputs = torch.asarray(list((product((0.0,1.0), repeat=self.n))))
                 landscape = self.model(all_inputs.to(device))
                 fourier_spectrum = self.original_H @ landscape
-                spectrums.append(fourier_spectrum.cpu().numpy())
+                self.spectrums.append(fourier_spectrum.cpu().numpy())
+        
+        # Start from the latest epoch if available
+        start_epoch = 0
+        if self.checkpoint_cache:
+            start_epoch = self.load_from_latest_checkpoint() + 1
 
-        for epoch in range(self.config["num_epochs"]):
+        for epoch in range(start_epoch, self.config["num_epochs"]):
             # Train epoch based on the set training method
             self.model.train()
             epoch_start = time.time()
@@ -227,11 +313,11 @@ class ModelTrainer:
                     all_inputs = torch.asarray(list((product((0.0,1.0), repeat=self.n))))
                     landscape = self.model(all_inputs.to(device))
                     fourier_spectrum = self.original_H @ landscape
-                    spectrums.append(fourier_spectrum.cpu().numpy())
+                    self.spectrums.append(fourier_spectrum.cpu().numpy())
 
                     # Log R2 of learned amps
-                    learned_amps = spectrums[-1][self.dataset.get_int_freqs()]
-                    epoch_log["amp_r2"] = r2_score(self.dataset.amp_f.cpu().numpy(), learned_amps)
+                    learned_amps = self.spectrums[-1][self.args["int_freqs"]]
+                    epoch_log["amp_r2"] = r2_score(self.args["amps"], learned_amps)
             
             epoch_log["val_mse_loss"] = RSS / self.val_size
             epoch_log["val_r2"] = 1 - RSS / self.val_tss
@@ -248,15 +334,20 @@ class ModelTrainer:
             
             self.scheduler.step()
 
-        if self.log_wandb:
-            for epoch_log in self.logs:
+            # Log wandb
+            if self.log_wandb:
                 wandb.log(epoch_log)
+
+            # Save checkpoint
+            if self.checkpoint_cache:
+                if (epoch % self.checkpoint_interval == 0) or (epoch == self.config["num_epochs"]-1):
+                    self.save_model(epoch)
         
         if self.plot_results:
             self.plot_logs()
             
         if self.report_epoch_fourier:
-            return spectrums
+            return self.spectrums
     
     def plot_logs(self):
         loss_data = {"train_mse_loss": [l["train_mse_loss"] for l in self.logs],
@@ -270,6 +361,79 @@ class ModelTrainer:
         sns.lineplot(loss_data, ax=axes[0])
         sns.lineplot(r2_data, ax=axes[1])
         axes[1].set_ylim(0, 1)
+
+    def get_model_dir(self):
+        data_directory = os.environ.get("EXPERIMENT_DATA") if "EXPERIMENT_DATA" in os.environ else os.getcwd()
+
+        keys_to_ignore = ["num_epochs"]
+        config_to_hash = {k:v for k, v in self.config.items() if k not in keys_to_ignore}
+        config_hash = hash_dict(config_to_hash)
+
+        model_dir = f"{data_directory}/checkpoints/{self.experiment_name}/{config_hash}/"
+        # Create directory and write config if not existed before
+        if not os.path.exists(model_dir):
+            os.makedirs(model_dir)
+            with open(f'{model_dir}/config.json', 'w') as fp:
+                json.dump(config_to_hash, fp, sort_keys=True)
+        
+        return model_dir
+    
+    def save_model(self, epoch):
+        # Save torch stuff
+        model_dir = self.get_model_dir()
+        checkpoint = { 
+                'epoch': epoch,
+                'model': self.model.state_dict(),
+                'optimizer': self.optim.state_dict(),
+                'scheduler': self.scheduler.state_dict(),
+            }
+        torch.save(checkpoint, f'{model_dir}/{epoch}.pth')
+
+        # Save logs
+        with open(f'{model_dir}/log{epoch}.json', 'w') as fp:
+            json.dump(self.logs, fp)
+
+        # Save Fourier Spectrums
+        if self.report_epoch_fourier:
+            np.save(f'{model_dir}/spectrums{epoch}.npy', self.spectrums, allow_pickle=True)
+
+    def load_model(self, epoch):
+        model_dir = self.get_model_dir()
+        # Load torch stuff
+        checkpoint_file = f'{model_dir}/{epoch}.pth'
+        if os.path.exists(checkpoint_file):
+            checkpoint = torch.load(checkpoint_file)
+            self.model.load_state_dict(checkpoint["model"])
+            self.optim.load_state_dict(checkpoint["optimizer"])
+            self.scheduler.load_state_dict(checkpoint["scheduler"])
+        else:
+            raise Exception(f"Could not find {checkpoint_file} to load from.")
+        
+        # Load logs
+        with open(f'{model_dir}/log{epoch}.json') as log_file:
+            self.logs = json.load(log_file)
+            # Re-report previous logs by wandb
+            if self.log_wandb:
+                for log in self.logs:
+                    wandb.log(log)
+        
+        # Load Fourier Spectrums
+        spectrum_file = f'{model_dir}/spectrums{epoch}.npy'
+        if os.path.exists(checkpoint_file):
+            self.spectrums = np.load(spectrum_file, allow_pickle=True)
+
+        print(f"Model state is loaded from checkpoint of eopch {epoch}. Continuing from this checkpoint.")
+    
+    def load_from_latest_checkpoint(self):
+        model_dir = self.get_model_dir()
+        available_epochs = [int(f.split(".")[0]) for f in glob.glob(f"{model_dir}/*.pth")]
+        if len(available_epochs) > 0:
+            latest_epoch = max(available_epochs)
+            self.load_model(latest_epoch)
+        else:
+            latest_epoch = -1
+
+        return latest_epoch
     
     def normal_epoch(self):
         device = self.device
