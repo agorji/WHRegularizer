@@ -22,6 +22,8 @@ import wandb
 from epistatic_net.spright_utils import SPRIGHT, make_system_simple
 from epistatic_net.wht_sampling import SPRIGHTSample
 
+EVAL_BATCH_SIZE = 10240
+
 class FourierDataset(Dataset):
     def __init__(self, n, k, freq_sampling_method="uniform_deg", amp_sampling_method="random", d=None, p_freq=None, n_samples = 100, p_t=0.5, 
                 random_seed=0, use_cache=True):
@@ -216,7 +218,7 @@ class ModelTrainer:
 
         # Dataloader
         self.train_loader = DataLoader(train_ds, batch_size=config["batch_size"], shuffle=True)
-        self.val_loader = DataLoader(val_ds, batch_size=config["batch_size"], shuffle=True)
+        self.val_loader = DataLoader(val_ds, batch_size=EVAL_BATCH_SIZE, shuffle=True)
         self.n = next(iter(self.val_loader))[0].shape[1] # original space dimension
 
         # Training method
@@ -241,7 +243,7 @@ class ModelTrainer:
             )
             self.X_all, self.X_all_inverse_ind = np.unique(self.X_all, axis=0, return_inverse='True')
             X_all_ds = TensorDataset(torch.from_numpy(self.X_all).to("cpu"), torch.zeros(self.X_all.shape[0], device="cpu"))
-            self.X_all_loader = DataLoader(X_all_ds, batch_size=10240)
+            self.X_all_loader = DataLoader(X_all_ds, batch_size=EVAL_BATCH_SIZE)
 
             # initialzie ADMM 
             self.Hu = np.zeros(len(self.X_all))

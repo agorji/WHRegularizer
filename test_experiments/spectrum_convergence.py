@@ -51,15 +51,16 @@ def main():
     print(wandb.config)
 
     n = wandb.config.n
-    k = wandb.config.k
-    d = math.ceil(n/3)
+    k = wandb.config.n
+    d = math.ceil(n/2)
     config = wandb.config
+    config["k"] = k
     config["d"] = d
     config["b"] = math.ceil(math.log2(k)) + config.get("hashing_discount", 0)
 
     # Dataset
-    config["train_size"] = config["dataset_size_coef"] * k * n
-    config["val_size"] = config["dataset_size_coef"] * k * n
+    config["train_size"] = math.ceil(config["dataset_size_coef"] * k * n)
+    config["val_size"] =  2**n - config["train_size"]
     dataset_size = config["train_size"] + config["val_size"]
     dataset = FourierDataset(n, k, d=d, n_samples=dataset_size, random_seed=config["random_seed"])
     train_ds = torch.utils.data.Subset(dataset, list(range(config["train_size"])))
@@ -81,7 +82,7 @@ def main():
     model = FCN(in_dim, 2)
     args = {"int_freqs": dataset.get_int_freqs(), "amps":dataset.amp_f.cpu().numpy()}
     trainer = ModelTrainer(model, train_ds, val_ds, config=train_config, log_wandb=True, report_epoch_fourier=True, 
-                            experiment_name="test_fourier", **args)
+                            experiment_name="test_fourier", checkpoint_interval=25, **args)
     spectrums = trainer.train_model()
 
 if __name__ == "__main__":
