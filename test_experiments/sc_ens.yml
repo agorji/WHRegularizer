@@ -22,7 +22,7 @@ parameters:
   weight_decay:
     values: [0.0]
   num_epochs:
-    values: [200]
+    values: [500]
   dataset_size_coef:
     values: [0.5, 1, 2]
   random_seed:

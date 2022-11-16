@@ -218,7 +218,7 @@ class ModelTrainer:
 
         # Dataloader
         self.train_loader = DataLoader(train_ds, batch_size=config["batch_size"], shuffle=True)
-        self.val_loader = DataLoader(val_ds, batch_size=EVAL_BATCH_SIZE, shuffle=True)
+        self.val_loader = DataLoader(val_ds, batch_size=EVAL_BATCH_SIZE)
         self.n = next(iter(self.val_loader))[0].shape[1] # original space dimension
 
         # Training method
@@ -276,23 +276,24 @@ class ModelTrainer:
         device = self.device
         self.spectrums = []
         self.model.to(device)
-
-        # Compute the Fourier spectrum of Model before training
-        if self.report_epoch_fourier:
-            self.model.eval()
-            with torch.no_grad():
-                all_inputs = torch.asarray(list((product((0.0,1.0), repeat=self.n))))
-                landscape = self.model(all_inputs.to(device))
-                fourier_spectrum = self.original_H @ landscape
-                self.spectrums.append(fourier_spectrum.cpu().numpy())
         
         # Start from the latest epoch if available
         start_epoch = 0
         if self.checkpoint_cache:
             start_epoch = self.load_from_latest_checkpoint() + 1
 
+        # Compute the Fourier spectrum of Model before training
+        if self.report_epoch_fourier:
+            if start_epoch == 0:
+                self.model.eval()
+                with torch.no_grad():
+                    all_inputs = torch.asarray(list((product((0.0,1.0), repeat=self.n))))
+                    landscape = self.model(all_inputs.to(device))
+                    fourier_spectrum = self.original_H @ landscape
+                    self.spectrums.append(fourier_spectrum.cpu().numpy())
+
         for epoch in range(start_epoch, self.config["num_epochs"]):
-            # Train epoch based on the set training method
+            # Train epoch
             self.model.train()
             epoch_start = time.time()
             RSS, epoch_log = self.train_epoch()
@@ -300,43 +301,30 @@ class ModelTrainer:
             epoch_log["train_mse_loss"] = RSS / self.train_size
             epoch_log["train_r2"] = 1 - RSS / self.train_tss
 
+            self.scheduler.step()
+
             # Evaluate the model on validation set
-            val_start = time.time()
-            self.model.eval()
-            with torch.no_grad():
-                RSS = 0
-                for X, y in self.val_loader:
-                    X, y = X.to(device), y.to(device)
-                    y_hat = self.model(X)
-                    RSS += torch.sum((y_hat-y)**2).item()
-                
-                # Compute the Fourier spectrum of Model if required
-                if self.report_epoch_fourier:
-                    all_inputs = torch.asarray(list((product((0.0,1.0), repeat=self.n))))
-                    landscape = self.model(all_inputs.to(device))
-                    fourier_spectrum = self.original_H @ landscape
-                    self.spectrums.append(fourier_spectrum.cpu().numpy())
-
-                    # Log R2 of learned amps
-                    learned_amps = self.spectrums[-1][self.args["int_freqs"]]
-                    epoch_log["amp_r2"] = r2_score(self.args["amps"], learned_amps)
+            epoch_log.update(self.evaluate_epoch())
             
-            epoch_log["val_mse_loss"] = RSS / self.val_size
-            epoch_log["val_r2"] = 1 - RSS / self.val_tss
-            epoch_log["val_time"] = time.time() - val_start
-            if self.print_logs:
-                print(f"#{epoch} - Train Loss: {epoch_log['train_mse_loss']:.3f}, R2: {epoch_log['train_r2']:.3f}"\
-                    f"\tValidation Loss: {epoch_log['val_mse_loss']:.3f}, R2: {epoch_log['val_r2']:.3f}")
+            # Compute the Fourier spectrum of Model if required
+            if self.report_epoch_fourier:
+                self.spectrums.append(self.compute_fourier_spectrum())
 
+                # Log R2 of learned amps
+                learned_amps = self.spectrums[-1][self.args["int_freqs"]]
+                epoch_log["amp_r2"] = r2_score(self.args["amps"], learned_amps)
+
+            # Compute aggregated metrics
             self.logs.append(epoch_log)
             epoch_log["max_val_r2"] = max([l["val_r2"] for l in self.logs])
             epoch_log["min_val_mse_loss"] = min([l["val_mse_loss"] for l in self.logs])
             if self.report_epoch_fourier:
                 epoch_log["max_amp_r2"] = max([l["amp_r2"] for l in self.logs])
-            
-            self.scheduler.step()
 
-            # Log wandb
+            # Logging
+            if self.print_logs:
+                print(f"#{epoch} - Train Loss: {epoch_log['train_mse_loss']:.3f}, R2: {epoch_log['train_r2']:.3f}"\
+                    f"\tValidation Loss: {epoch_log['val_mse_loss']:.3f}, R2: {epoch_log['val_r2']:.3f}")
             if self.log_wandb:
                 wandb.log(epoch_log)
 
@@ -350,6 +338,40 @@ class ModelTrainer:
             
         if self.report_epoch_fourier:
             return self.spectrums
+
+    def evaluate_model(self, val_loader, val_size, val_tss):
+        val_start = time.time()
+        self.model.eval()
+        with torch.no_grad():
+            RSS = 0
+            for X, y in val_loader:
+                X, y = X.to(self.device), y.to(self.device)
+                y_hat = self.model(X)
+                RSS += torch.sum((y_hat-y)**2).item()
+        return {
+            "val_mse_loss": RSS / val_size,
+            "val_r2": 1 - RSS / val_tss,
+            "val_time": time.time() - val_start,
+        }
+    
+    def evaluate_epoch(self):
+        return self.evaluate_model(self.val_loader, self.val_size, self.val_tss)
+    
+    def evaluate_model_on_dataset(self, val_ds):
+        val_loader = DataLoader(val_ds, batch_size=EVAL_BATCH_SIZE)
+        val_size = len(val_ds)
+        val_mean_y = sum([torch.sum(y).item() for _, y in val_loader]) / len(val_ds)
+        val_tss = sum([torch.sum((y-val_mean_y)**2).item() for _, y in val_loader])
+        return self.evaluate_model(val_loader, val_size, val_tss)
+    
+    def compute_fourier_spectrum(self):
+        self.model.eval()
+        with torch.no_grad():
+            all_inputs = torch.asarray(list((product((0.0,1.0), repeat=self.n))))
+            landscape = self.model(all_inputs.to(self.device))
+            fourier_spectrum = self.original_H @ landscape
+
+        return fourier_spectrum.cpu().numpy()
     
     def plot_logs(self):
         loss_data = {"train_mse_loss": [l["train_mse_loss"] for l in self.logs],
@@ -422,13 +444,13 @@ class ModelTrainer:
         # Load Fourier Spectrums
         spectrum_file = f'{model_dir}/spectrums{epoch}.npy'
         if os.path.exists(checkpoint_file):
-            self.spectrums = np.load(spectrum_file, allow_pickle=True)
+            self.spectrums = list(np.load(spectrum_file, allow_pickle=True))
 
         print(f"Model state is loaded from checkpoint of eopch {epoch}. Continuing from this checkpoint.")
     
     def load_from_latest_checkpoint(self):
         model_dir = self.get_model_dir()
-        available_epochs = [int(f.split(".")[0]) for f in glob.glob(f"{model_dir}/*.pth")]
+        available_epochs = [int(os.path.basename(f).split(".")[0]) for f in glob.glob(f"{model_dir}/*.pth")]
         if len(available_epochs) > 0:
             latest_epoch = max(available_epochs)
             self.load_model(latest_epoch)
