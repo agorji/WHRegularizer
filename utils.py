@@ -26,12 +26,13 @@ EVAL_BATCH_SIZE = 10240
 
 class FourierDataset(Dataset):
     def __init__(self, n, k, freq_sampling_method="uniform_deg", amp_sampling_method="random", d=None, p_freq=None, n_samples = 100, p_t=0.5, 
-                random_seed=0, use_cache=True):
+                random_seed=0, use_cache=True, freq_seed=None):
         self.n = n
         self.k = k
         self.d = d
         self.n_samples = n_samples
         self.random_seed = random_seed
+        self.freq_seed = freq_seed
         self.freq_sampling_method = freq_sampling_method
         self.amp_sampling_method = amp_sampling_method
 
@@ -45,7 +46,7 @@ class FourierDataset(Dataset):
                 return
 
         self.generator = torch.Generator()
-        self.generator.manual_seed(random_seed)
+        self.generator.manual_seed(freq_seed if freq_seed is not None else random_seed)
 
         # Freqs
         if freq_sampling_method == "uniform_deg":
@@ -60,6 +61,10 @@ class FourierDataset(Dataset):
             self.amp_f = torch.FloatTensor(k).uniform_(-1, 1, generator=self.generator)
         elif amp_sampling_method == "constant":
             self.amp_f = torch.ones(k)
+        
+        # If freq_seed is given we reset random seed
+        if freq_seed is not None:
+            self.generator.manual_seed(random_seed)
 
         # Data
         self.X = (torch.rand(n_samples, n, generator=self.generator) < p_t).float()
@@ -113,7 +118,8 @@ class FourierDataset(Dataset):
         return dataset_dir
     
     def get_cache_file_name(self):
-        return f'{self.n_samples}_seed{self.random_seed}_{self.freq_sampling_method}_{self.amp_sampling_method}.pth'
+        freq_seed_postfix = f"(freq{self.freq_seed})" if self.freq_seed is not None else ""
+        return f'{self.n_samples}_seed{self.random_seed}{freq_seed_postfix}_{self.freq_sampling_method}_{self.amp_sampling_method}.pth'
     
     def cache(self):
         model_dir = self.get_cache_dir()

@@ -25,3 +25,5 @@ parameters:
     values: [0.5, 1, 2]
   random_seed:
     values: [11, 22, 33, 44, 55]
+  freq_seed:
+    values: [1, 2, 3]

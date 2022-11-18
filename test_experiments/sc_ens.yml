@@ -3,7 +3,7 @@ method: grid
 name: amp_r2_test_ens
 metric:
   goal: maximize
-  name: val_r2
+  name: max_val_r2
 parameters:
   training_method:
     values: ['EN-S']
@@ -24,6 +24,8 @@ parameters:
   num_epochs:
     values: [500]
   dataset_size_coef:
-    values: [0.5, 1, 2]
+    values: [0.5, 1, 2, 4]
   random_seed:
     values: [11, 22, 33, 44, 55]
+  freq_seed:
+    values: [1, 2, 3]

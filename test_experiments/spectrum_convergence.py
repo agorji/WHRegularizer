@@ -62,7 +62,7 @@ def main():
     config["train_size"] = math.ceil(config["dataset_size_coef"] * k * n)
     config["val_size"] =  2**n - config["train_size"]
     dataset_size = config["train_size"] + config["val_size"]
-    dataset = FourierDataset(n, k, d=d, n_samples=dataset_size, random_seed=config["random_seed"])
+    dataset = FourierDataset(n, k, d=d, n_samples=dataset_size, random_seed=config["random_seed"], freq_seed=config["freq_seed"])
     train_ds = torch.utils.data.Subset(dataset, list(range(config["train_size"])))
     val_ds = torch.utils.data.Subset(dataset, list(range(config["train_size"], dataset_size)))
 
