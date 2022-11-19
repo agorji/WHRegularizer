@@ -1,5 +1,4 @@
 import sys
-import os
 from pathlib import Path
 sys.path.append(str(Path.cwd().parent))
 
@@ -62,12 +61,13 @@ def main():
     config["train_size"] = math.ceil(config["dataset_size_coef"] * k * n)
     config["val_size"] =  2**n - config["train_size"]
     dataset_size = config["train_size"] + config["val_size"]
-    dataset = FourierDataset(n, k, d=d, n_samples=dataset_size, random_seed=config["random_seed"], freq_seed=config["freq_seed"])
+    random_seed = config["freq_seed"] if config.get("fix_dataset", False) else config["random_seed"]
+    dataset = FourierDataset(n, k, d=d, n_samples=dataset_size, random_seed=random_seed, freq_seed=config["freq_seed"])
     train_ds = torch.utils.data.Subset(dataset, list(range(config["train_size"])))
     val_ds = torch.utils.data.Subset(dataset, list(range(config["train_size"], dataset_size)))
 
     # Set batch size
-    config["epoch_iterations"] = config["SPRIGHT_d"]
+    config["epoch_iterations"] = config.get("SPRIGHT_d", 1)
     batch_size = config["train_size"] / config["epoch_iterations"]
     a = 1
     while(a * 1.25 < batch_size):
@@ -78,11 +78,12 @@ def main():
     remove_from_train_config = ["hashing_discount", "dataset_size_coef", "val_size", "epoch_iterations"]
     train_config = {k:v for k, v in config.items() if k not in remove_from_train_config}    
 
+    torch.manual_seed(config["random_seed"]) # Seed for network initialization
     in_dim = dataset.X.shape[1]
     model = FCN(in_dim, 2)
     args = {"int_freqs": dataset.get_int_freqs(), "amps":dataset.amp_f.cpu().numpy()}
     trainer = ModelTrainer(model, train_ds, val_ds, config=train_config, log_wandb=True, report_epoch_fourier=True, 
-                            experiment_name="test_fourier", checkpoint_interval=25, **args)
+                            experiment_name="test_fourier", checkpoint_interval=100, **args)
     spectrums = trainer.train_model()
 
 if __name__ == "__main__":

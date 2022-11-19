@@ -1,3 +1,7 @@
+import sys
+from pathlib import Path
+sys.path.append(str(Path.cwd().parent))
+
 import math
 import numpy as np
 import random

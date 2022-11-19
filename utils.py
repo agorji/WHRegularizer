@@ -234,7 +234,7 @@ class ModelTrainer:
 
         elif training_method == "EN":
             self.train_epoch = self.EN_epoch
-            self.all_inputs = torch.asarray(list((product((0,1), repeat=self.n)))).to(device)
+            self.all_inputs = torch.asarray(list((product((0,1), repeat=self.n)))).float().to(device)
             self.H = hadamard_matrix(self.n, normalize=True).to(device)
 
         elif training_method == "EN-S":
@@ -449,7 +449,7 @@ class ModelTrainer:
         
         # Load Fourier Spectrums
         spectrum_file = f'{model_dir}/spectrums{epoch}.npy'
-        if os.path.exists(checkpoint_file):
+        if os.path.exists(spectrum_file):
             self.spectrums = list(np.load(spectrum_file, allow_pickle=True))
 
         print(f"Model state is loaded from checkpoint of eopch {epoch}. Continuing from this checkpoint.")
@@ -468,7 +468,6 @@ class ModelTrainer:
     def normal_epoch(self):
         device = self.device
         RSS = 0
-        batch_train_loss = []
         for X, y in self.train_loader:
             self.optim.zero_grad()
             X, y = X.to(device), y.to(device)
@@ -483,7 +482,7 @@ class ModelTrainer:
     
     def hashing_epoch(self):
         device = self.device
-        batch_train_loss, batch_hadamard_loss = [], []
+        batch_hadamard_loss = []
         hadamard_times = []
         RSS = 0
         for X, y in self.train_loader:
@@ -491,7 +490,6 @@ class ModelTrainer:
             X, y = X.to(device), y.to(device)
             y_hat = self.model(X)
             loss = F.mse_loss(y, y_hat)
-            batch_train_loss.append(loss)
             RSS += torch.sum((y_hat-y)**2).item()
 
             # Find the sample inputs using the hashing scheme
@@ -519,7 +517,7 @@ class ModelTrainer:
     
     def EN_epoch(self):
         device = self.device
-        batch_train_loss, batch_hadamard_loss = [], []
+        batch_hadamard_loss = []
         hadamard_times = []
         RSS = 0
         for X, y in self.train_loader:
@@ -527,7 +525,6 @@ class ModelTrainer:
             X, y = X.to(device), y.to(device)
             y_hat = self.model(X)
             loss = F.mse_loss(y, y_hat)
-            batch_train_loss.append(loss)
             RSS += torch.sum((y_hat-y)**2).item()
 
             # Compute the Hadamard transform of all possible inputs and add to loss
@@ -552,7 +549,7 @@ class ModelTrainer:
     def ENS_epoch(self):
         device = self.device
         l2_loss = nn.MSELoss()
-        batch_train_loss, batch_hadamard_loss = [], []
+        batch_hadamard_loss = []
         RSS = 0
         network_update_time = time.time()
         for X, y in self.train_loader:
@@ -560,7 +557,6 @@ class ModelTrainer:
             X, y = X.to(device), y.to(device)
             y_hat = self.model(X)
             loss = F.mse_loss(y, y_hat)
-            batch_train_loss.append(loss)
             RSS += torch.sum((y_hat-y)**2).item()
 
             wht_out = self.model(torch.tensor(self.X_all, dtype=torch.float, device=device)).reshape(-1)

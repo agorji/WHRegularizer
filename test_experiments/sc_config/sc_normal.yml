@@ -1,22 +1,14 @@
 program: spectrum_convergence.py
 method: grid
-name: amp_r2_test_ens
+name: amp_r2_test_normal
 metric:
   goal: maximize
   name: max_val_r2
 parameters:
   training_method:
-    values: ['EN-S']
+    values: ['normal']
   n:
     values: [8, 10, 12, 14]
-  hashing_discount:
-    values: [0]
-  SPRIGHT_d:
-    values: [3, 5, 7]
-  rho:
-    values: [0.001, 0.01, 0.1]
-  hadamard_lambda:
-    values: [1, 0.1, 0.01]
   lr:
     values: [0.01]
   weight_decay:
@@ -29,3 +21,5 @@ parameters:
     values: [11, 22, 33, 44, 55]
   freq_seed:
     values: [1, 2, 3]
+  fix_dataset:
+    values: [True]

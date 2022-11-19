@@ -1,0 +1,29 @@
+program: spectrum_convergence.py
+method: grid
+name: amp_r2_test_en
+metric:
+  goal: maximize
+  name: max_val_r2
+parameters:
+  training_method:
+    values: ['EN']
+  n:
+    values: [8, 10, 12, 14]
+  SPRIGHT_d:
+    values: [3, 5, 7]
+  hadamard_lambda:
+    values: [1, 0.1, 0.01]
+  lr:
+    values: [0.01, 0.001]
+  weight_decay:
+    values: [0.0]
+  num_epochs:
+    values: [500]
+  dataset_size_coef:
+    values: [0.5, 1, 2, 4]
+  random_seed:
+    values: [11, 22, 33, 44, 55]
+  freq_seed:
+    values: [1, 2, 3]
+  fix_dataset:
+    values: [True]

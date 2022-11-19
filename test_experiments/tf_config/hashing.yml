@@ -3,30 +3,24 @@ method: grid
 name: big_n_hashing
 metric:
   goal: maximize
-  name: val_r2
+  name: max_val_r2
 parameters:
   training_method:
     values: ['hashing']
   n:
-    values: [50, 80, 100]
-  k:
-    values: [10, 50, 100]
+    values: [25, 50, 100]
   hashing_discount:
-    values: [1, 2, 4]
+    values: [1, 2, 4, 6]
+  SPRIGHT_d:
+    values: [3, 5, 7]
   hadamard_lambda:
-    values: [0.0, 0.001, 0.005, 0.01]
+    values: [0.001, 0.005, 0.01]
   lr:
     values: [0.01]
-  scheduler_step_size:
-    values: [300]
-  scheduler_gamma:
-    values: [0.5]
   weight_decay:
     values: [0.0]
   num_epochs:
     values: [200]
-  epoch_iterations:
-    values: [50]
   dataset_size_coef:
     values: [5, 10, 20, 50]
   random_seed:

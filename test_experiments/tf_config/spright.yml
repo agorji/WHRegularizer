@@ -3,7 +3,7 @@ method: grid
 name: big_n_spright
 metric:
   goal: maximize
-  name: val_r2
+  name: max_val_r2
 parameters:
   training_method:
     values: ['EN-S']
