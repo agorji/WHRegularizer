@@ -419,13 +419,18 @@ class ModelTrainer:
             }
         torch.save(checkpoint, f'{model_dir}/{epoch}.pth')
 
-        # Save logs
+        # Save logs (+remove older ones)
+        for f in glob.glob(f'{model_dir}/log*.json'):
+            os.remove(f)
         with open(f'{model_dir}/log{epoch}.json', 'w') as fp:
             json.dump(self.logs, fp)
 
-        # Save Fourier Spectrums
+        # Save Fourier spectrums (+remove older ones)
         if self.report_epoch_fourier:
+            for f in glob.glob(f'{model_dir}/spectrums*.npy'):
+                os.remove(f)
             np.save(f'{model_dir}/spectrums{epoch}.npy', self.spectrums, allow_pickle=True)
+        
 
     def load_model(self, epoch):
         model_dir = self.get_model_dir()
