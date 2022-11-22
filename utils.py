@@ -184,7 +184,7 @@ def hash_dict(dictionary):
 
 
 class ModelTrainer:
-    def __init__(self, model: nn.Module, train_ds: Dataset, val_ds: Dataset, config: Dict, device = "cuda", log_wandb = False, checkpoint_cache=True, checkpoint_interval=5,
+    def __init__(self, model: nn.Module, train_ds: Dataset, val_ds: Dataset, config: Dict, device = "cuda", log_wandb = False, checkpoint_cache=False, checkpoint_interval=25,
                     report_epoch_fourier=False, print_logs=True, plot_results=False, experiment_name="default", **kwargs):
         '''
             Trains a torch model given the dataset and the training method.

@@ -11,6 +11,7 @@ import torch.nn.functional as F
 import wandb
 
 from utils import FourierDataset, ModelTrainer
+from wandb_utils import get_wandb_logs
 
 class FCN(nn.Module):
     def __init__(self, n, multiplier=2, batch_norm=False):
@@ -57,14 +58,11 @@ def main():
     config["d"] = d
     config["b"] = math.ceil(math.log2(k)) + config.get("hashing_discount", 0)
 
-    # Dataset
+    # Dataset params
     config["train_size"] = math.ceil(config["dataset_size_coef"] * k * n)
     config["val_size"] =  2**n - config["train_size"]
     dataset_size = config["train_size"] + config["val_size"]
     random_seed = config["freq_seed"] if config.get("fix_dataset", False) else config["random_seed"]
-    dataset = FourierDataset(n, k, d=d, n_samples=dataset_size, random_seed=random_seed, freq_seed=config["freq_seed"])
-    train_ds = torch.utils.data.Subset(dataset, list(range(config["train_size"])))
-    val_ds = torch.utils.data.Subset(dataset, list(range(config["train_size"], dataset_size)))
 
     # Set batch size
     config["epoch_iterations"] = config.get("SPRIGHT_d", 1)
@@ -73,6 +71,19 @@ def main():
     while(a * 1.25 < batch_size):
         a *= 2
     config["batch_size"] = a
+
+    # Dataset
+    dataset = FourierDataset(n, k, d=d, n_samples=dataset_size, random_seed=random_seed, freq_seed=config["freq_seed"])
+    train_ds = torch.utils.data.Subset(dataset, list(range(config["train_size"])))
+    val_ds = torch.utils.data.Subset(dataset, list(range(config["train_size"], dataset_size)))
+
+    # Check if live log is available
+    wandb_logs = get_wandb_logs(run.path, config)
+    if (wandb_logs is not None) and len(wandb_logs) >= config["num_epochs"]:
+        print("Reporting the available online run logs...")
+        for l in wandb_logs:
+            wandb.log(l)
+        return
 
     # Train model
     remove_from_train_config = ["hashing_discount", "dataset_size_coef", "val_size", "epoch_iterations"]
