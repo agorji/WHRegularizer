@@ -1,22 +1,18 @@
 program: test_fourier.py
 method: grid
-name: big_n_hash
+name: big_n_normal
 metric:
   goal: maximize
   name: max_val_r2
 parameters:
   training_method:
-    values: ['hashing']
+    values: ['normal']
   n:
     values: [25, 50, 100]
   k:
     values: [25]
   d:
     values: [5]
-  hashing_discount:
-    values: [0, 1, 2, 4]
-  hadamard_lambda:
-    values: [0.0005, 0.001, 0.005]
   lr:
     values: [0.01]
   weight_decay:

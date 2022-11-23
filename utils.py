@@ -576,12 +576,15 @@ class ModelTrainer:
         
         hadamard_start = time.time()
 
+        # with torch.no_grad():
+        #     y_hat_alls = []
+        #     for X, _ in self.X_all_loader:
+        #         y_hat_all = self.model(X.float().to(device))
+        #         y_hat_alls.append(y_hat_all.cpu().numpy().flatten())
+        # y_hat_all = np.concatenate(y_hat_alls)
         with torch.no_grad():
-            y_hat_alls = []
-            for X, _ in self.X_all_loader:
-                y_hat_all = self.model(X.float().to(device))
-                y_hat_alls.append(y_hat_all.cpu().numpy().flatten())
-        y_hat_all = np.concatenate(y_hat_alls)
+            y_hat_all = self.model(torch.tensor(self.X_all, dtype=torch.float, device=device))
+            y_hat_all = y_hat_all.cpu().numpy().flatten()
 
         # run spright to do fast sparse WHT
         fourier_start = time.time()
