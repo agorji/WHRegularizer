@@ -59,10 +59,11 @@ def main():
     config["train_size"] = config["dataset_size_coef"] * k * n
     config["val_size"] = k * n * n
     dataset_size = config["train_size"] + config["val_size"]
-    if config["fix_dataset"]:
-        dataset = FourierDataset(n, k, d=d, n_samples=dataset_size, random_seed=config["fix_seed"])
-    else:
-        dataset = FourierDataset(n, k, d=d, n_samples=dataset_size, random_seed=config["random_seed"])
+    dataset_args = {"random_seed": config["fix_seed"] if config.get("fix_dataset", False) else config["random_seed"]}
+    if "freq_sampling_method" in config:
+        dataset_args["freq_sampling_method"] = config["freq_sampling_method"]
+
+    dataset = FourierDataset(n, k, d=d, n_samples=dataset_size, **dataset_args)
 
     train_ds = torch.utils.data.Subset(dataset, list(range(config["train_size"])))
     val_ds = torch.utils.data.Subset(dataset, list(range(config["train_size"], dataset_size)))
@@ -78,7 +79,7 @@ def main():
     in_dim = dataset.X.shape[1]
     model = FCN(in_dim, 2)
     trainer = ModelTrainer(model, train_ds, val_ds, config=train_config, log_wandb=True, checkpoint_cache=True, 
-                            experiment_name="test_fourier")
+                            experiment_name="test_fourier_fix_deg")
     model = trainer.train_model()
 
 if __name__ == "__main__":
