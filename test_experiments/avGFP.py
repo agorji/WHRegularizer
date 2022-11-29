@@ -10,7 +10,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 import wandb
 
-from utils import FourierDataset, ModelTrainer
+from utils import ModelTrainer
+from datasets import avGFPDataset
 
 class FCN(nn.Module):
     def __init__(self, n, multiplier=2, batch_norm=False):
@@ -48,38 +49,22 @@ class FCN(nn.Module):
 def main():  
     run = wandb.init()
     print(wandb.config)
-
-    n = wandb.config.n
-    k = wandb.config.k
-    d = wandb.config.d
     config = wandb.config
-    config["b"] = math.ceil(math.log2(k)) + config.get("hashing_discount", 0)
 
     # Dataset
-    config["train_size"] = config["dataset_size_coef"] * k * n
-    config["val_size"] = k * n * n
-    dataset_size = config["train_size"] + config["val_size"]
-    dataset_args = {"random_seed": config["fix_seed"] if config.get("fix_dataset", False) else config["random_seed"]}
-    if "freq_sampling_method" in config:
-        dataset_args["freq_sampling_method"] = config["freq_sampling_method"]
-
-    dataset = FourierDataset(n, k, d=d, n_samples=dataset_size, **dataset_args)
-
-    train_ds = torch.utils.data.Subset(dataset, list(range(config["train_size"])))
-    val_ds = torch.utils.data.Subset(dataset, list(range(config["train_size"], dataset_size)))
+    torch.manual_seed(config["fix_seed"])
+    dataset = avGFPDataset()
+    dataset_size = len(dataset)
+    train_ds, val_ds = torch.utils.data.random_split(dataset, [config["train_size"], dataset_size - config["train_size"]])
 
     # Set batch size
     config["batch_size"] = math.ceil(config["train_size"] / config["epoch_iterations"])
 
     # Train model
-    remove_from_train_config = ["hashing_discount", "dataset_size_coef", "val_size", "epoch_iterations"]
-    train_config = {k:v for k, v in config.items() if k not in remove_from_train_config}
-
     torch.manual_seed(config["random_seed"]) # Seed for network initialization
     in_dim = dataset.X.shape[1]
-    model = FCN(in_dim, 2)
-    trainer = ModelTrainer(model, train_ds, val_ds, config=train_config, log_wandb=True, checkpoint_cache=True, 
-                            experiment_name="test_fourier_fix_deg")
+    model = FCN(in_dim, 10)
+    trainer = ModelTrainer(model, train_ds, val_ds, config=config, log_wandb=True, checkpoint_cache=True, experiment_name="GB1")
     model = trainer.train_model()
 
 if __name__ == "__main__":

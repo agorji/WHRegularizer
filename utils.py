@@ -22,7 +22,7 @@ import wandb
 from epistatic_net.spright_utils import SPRIGHT, make_system_simple
 from epistatic_net.wht_sampling import SPRIGHTSample
 
-EVAL_BATCH_SIZE = 10240
+EVAL_BATCH_SIZE = 204800
 
 class FourierDataset(Dataset):
     def __init__(self, n, k, freq_sampling_method="uniform_deg", amp_sampling_method="random", d=None, p_freq=None, n_samples = 100, p_t=0.5, 
@@ -51,6 +51,8 @@ class FourierDataset(Dataset):
         # Freqs
         if freq_sampling_method == "uniform_deg":
             self.freq_f = self.uniform_deg_freq(d)
+        elif freq_sampling_method == "fixed_deg":
+            self.freq_f = self.fixed_deg_freq(d)
         elif freq_sampling_method == "bernouli":
             self.freq_f = self.bernouli_freq(p_freq)
         else:
@@ -96,6 +98,23 @@ class FourierDataset(Dataset):
         weights = torch.ones(self.n)
         for i in range(self.k):
             deg = torch.randint(1, d+1, (1,),  generator=self.generator).item()
+            is_duplicate = True
+            while is_duplicate:
+                one_indices = torch.multinomial(weights, deg, generator=self.generator)
+                new_f = torch.zeros(self.n).float()
+                new_f[one_indices] = 1.0
+                new_f = new_f.tolist()
+
+                if new_f not in freqs:
+                    freqs.append(new_f)
+                    is_duplicate = False
+        return torch.tensor(freqs).float()
+
+    def fixed_deg_freq(self, d):
+        freqs = []
+        weights = torch.ones(self.n)
+        deg = d
+        for i in range(self.k):
             is_duplicate = True
             while is_duplicate:
                 one_indices = torch.multinomial(weights, deg, generator=self.generator)

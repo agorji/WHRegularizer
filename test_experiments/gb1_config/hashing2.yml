@@ -1,0 +1,29 @@
+program: gb1.py
+method: grid
+name: gb1_hash_more_lambda
+metric:
+  goal: maximize
+  name: max_val_r2
+parameters:
+  training_method:
+    values: ['hashing']
+  b:
+    values: [7, 8, 9, 11, 13]
+  hadamard_lambda:
+    values: [0.00001, 0.00005]
+  lr:
+    values: [0.01, 0.001]
+  weight_decay:
+    values: [0.0]
+  num_epochs:
+    values: [500]
+  epoch_iterations:
+    values: [1, 10, 50]
+  random_seed:
+    values: [11, 22, 33, 44, 55]
+  fix_seed:
+    values: [1, 2, 3]
+  fix_dataset:
+    values: [True]
+  train_size:
+    values: [2000]

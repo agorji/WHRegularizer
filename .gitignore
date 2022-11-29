@@ -132,3 +132,6 @@ dmypy.json
 *.out
 wandb/
 cache/
+
+# Data files
+data/
