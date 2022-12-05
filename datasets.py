@@ -10,6 +10,157 @@ from sklearn.preprocessing import OneHotEncoder
 
 DATA_PATH = Path(__file__).parent / "data"
 
+class FourierDataset(Dataset):
+    def __init__(self, n, k, freq_sampling_method="uniform_deg", amp_sampling_method="random", d=None, p_freq=None, n_samples = 100, p_t=0.5, 
+                random_seed=0, use_cache=True, freq_seed=None):
+        self.n = n
+        self.k = k
+        self.d = d
+        self.n_samples = n_samples
+        self.random_seed = random_seed
+        self.freq_seed = freq_seed
+        self.freq_sampling_method = freq_sampling_method
+        self.amp_sampling_method = amp_sampling_method
+
+        # Check if n_samples makes sense
+        if n_samples > 2**self.n:
+            raise Exception(f"Can't generate a dataset of size {n_samples} for a space with n={self.n}")
+
+        # Load from cache if possible
+        if use_cache:
+            if self.load_from_cache():
+                return
+
+        self.generator = torch.Generator()
+        self.generator.manual_seed(freq_seed if freq_seed is not None else random_seed)
+
+        # Freqs
+        if freq_sampling_method == "uniform_deg":
+            self.freq_f = self.uniform_deg_freq(d)
+        elif freq_sampling_method == "fixed_deg":
+            self.freq_f = self.fixed_deg_freq(d)
+        elif freq_sampling_method == "bernouli":
+            self.freq_f = self.bernouli_freq(p_freq)
+        else:
+            raise Exception(f'"{freq_sampling_method}" is not a generation method supported in FourierDataset.')
+
+        # Amplitudes
+        if amp_sampling_method == "random":
+            self.amp_f = torch.FloatTensor(k).uniform_(-1, 1, generator=self.generator)
+        elif amp_sampling_method == "constant":
+            self.amp_f = torch.ones(k)
+        
+        # If freq_seed is given we reset random seed
+        if freq_seed is not None:
+            self.generator.manual_seed(random_seed)
+
+        # Data
+        self.X = (torch.rand(n_samples, n, generator=self.generator) < p_t).float()
+        ## --- deduplicating data
+        self.X = torch.unique(self.X, dim=0)
+        while self.X.shape[0] < n_samples:
+            self.X = torch.vstack([self.X, (torch.rand(n_samples - self.X.shape[0], n, generator=self.generator) < p_t).float()])
+            self.X = torch.unique(self.X, dim=0)
+        self.y = self.compute_y(self.X)
+
+        if use_cache:
+            self.cache()
+
+    def __len__(self):
+        return len(self.X)
+
+    def __getitem__(self, i):
+        return self.X[i], self.y[i]
+
+    def compute_y(self, X):
+        t_dot_f = X @ torch.t(self.freq_f)
+        return torch.sum(torch.where(t_dot_f % 2 == 1, -1, 1) * self.amp_f, axis = -1) / self.k
+
+    def bernouli_freq(self, p):
+        return (torch.rand(self.k, self.n, generator=self.generator) < p).float()
+
+    def uniform_deg_freq(self, d):
+        freqs = []
+        weights = torch.ones(self.n)
+        for i in range(self.k):
+            deg = torch.randint(1, d+1, (1,),  generator=self.generator).item()
+            is_duplicate = True
+            while is_duplicate:
+                one_indices = torch.multinomial(weights, deg, generator=self.generator)
+                new_f = torch.zeros(self.n).float()
+                new_f[one_indices] = 1.0
+                new_f = new_f.tolist()
+
+                if new_f not in freqs:
+                    freqs.append(new_f)
+                    is_duplicate = False
+        return torch.tensor(freqs).float()
+
+    def fixed_deg_freq(self, d):
+        freqs = []
+        weights = torch.ones(self.n)
+        deg = d
+        for i in range(self.k):
+            is_duplicate = True
+            while is_duplicate:
+                one_indices = torch.multinomial(weights, deg, generator=self.generator)
+                new_f = torch.zeros(self.n).float()
+                new_f[one_indices] = 1.0
+                new_f = new_f.tolist()
+
+                if new_f not in freqs:
+                    freqs.append(new_f)
+                    is_duplicate = False
+        return torch.tensor(freqs).float()
+    
+    def get_cache_dir(self):
+        data_directory = os.environ.get("EXPERIMENT_DATA") if "EXPERIMENT_DATA" in os.environ else os.getcwd()
+
+        dataset_dir = f"{data_directory}/datasets/n{self.n}_k{self.k}_d{self.d}/"
+        if not os.path.exists(dataset_dir):
+            os.makedirs(dataset_dir)
+        
+        return dataset_dir
+    
+    def get_cache_file_name(self):
+        freq_seed_postfix = f"(freq{self.freq_seed})" if self.freq_seed is not None else ""
+        return f'{self.n_samples}_seed{self.random_seed}{freq_seed_postfix}_{self.freq_sampling_method}_{self.amp_sampling_method}.pth'
+    
+    def cache(self):
+        model_dir = self.get_cache_dir()
+        cache_file_name = self.get_cache_file_name()
+
+        data = { 
+                'X': self.X,
+                'y': self.y,
+                'freqs': self.freq_f,
+                'amps': self.amp_f,
+            }
+        torch.save(data, f'{model_dir}/{cache_file_name}')
+    
+    def load_from_cache(self):
+        model_dir = self.get_cache_dir()
+        cache_file_name = self.get_cache_file_name()
+        dataset_file = f'{model_dir}/{cache_file_name}'
+        if os.path.exists(dataset_file):
+            loaded_data = torch.load(dataset_file)
+            self.X = loaded_data["X"]
+            self.y = loaded_data["y"]
+            self.freq_f = loaded_data["freqs"]
+            self.amp_f = loaded_data["amps"]
+            return True
+        else:
+            return False
+
+    def get_int_freqs(self):
+        return self.freq_f.cpu().numpy().dot(2**np.arange(self.n)[::-1]).astype(int)
+
+    def get_fourier_spectrum(self):
+        spectrum = np.zeros(2**self.n)
+        spectrum[self.get_int_freqs()] = self.amp_f.cpu().numpy()
+        return spectrum
+
+
 class GB1Dataset(Dataset):
     def __init__(self, use_cache=True):
         # Load from storage if requested and available

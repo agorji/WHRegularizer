@@ -10,7 +10,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 import wandb
 
-from utils import FourierDataset, ModelTrainer
+from utils import ModelTrainer
+from datasets import FourierDataset
 from wandb_utils import get_wandb_logs
 
 class FCN(nn.Module):

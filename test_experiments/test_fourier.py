@@ -10,7 +10,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 import wandb
 
-from utils import FourierDataset, ModelTrainer
+from utils import ModelTrainer
+from datasets import FourierDataset
 
 class FCN(nn.Module):
     def __init__(self, n, multiplier=2, batch_norm=False):
