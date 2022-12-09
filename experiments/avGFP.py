@@ -63,8 +63,9 @@ def main():
     # Train model
     torch.manual_seed(config["random_seed"]) # Seed for network initialization
     in_dim = dataset.X.shape[1]
-    model = FCN(in_dim, 10)
-    trainer = ModelTrainer(model, train_ds, val_ds, config=config, log_wandb=True, checkpoint_cache=True, experiment_name="GB1")
+    model = FCN(in_dim, 1)
+    interval = 5 if config["training_method"] == "EN-S" else 50
+    trainer = ModelTrainer(model, train_ds, val_ds, config=config, log_wandb=True, checkpoint_cache=True, experiment_name="avGFP_small_nobn", checkpoint_interval=interval)
     model = trainer.train_model()
 
 if __name__ == "__main__":

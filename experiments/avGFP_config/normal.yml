@@ -12,9 +12,9 @@ parameters:
   weight_decay:
     values: [0.0]
   num_epochs:
-    values: [1000]
+    values: [500]
   epoch_iterations:
-    values: [10, 25, 50]
+    values: [25]
   random_seed:
     values: [11, 22, 33, 44, 55]
   fix_seed:
@@ -22,4 +22,4 @@ parameters:
   fix_dataset:
     values: [True]
   train_size:
-    values: [20000]
+    values: [500, 1000, 2000]

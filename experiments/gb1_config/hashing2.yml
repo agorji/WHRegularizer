@@ -10,15 +10,15 @@ parameters:
   b:
     values: [7, 8, 9, 11, 13]
   hadamard_lambda:
-    values: [0.00001, 0.00005]
+    values: [0.00001, 0.01]
   lr:
-    values: [0.01, 0.001]
+    values: [0.01]
   weight_decay:
     values: [0.0]
   num_epochs:
     values: [500]
   epoch_iterations:
-    values: [1, 10, 50]
+    values: [50, 100]
   random_seed:
     values: [11, 22, 33, 44, 55]
   fix_seed:

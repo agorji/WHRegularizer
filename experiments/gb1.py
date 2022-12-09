@@ -61,8 +61,8 @@ def main():
     # Train model
     torch.manual_seed(config["random_seed"]) # Seed for network initialization
     in_dim = dataset.X.shape[1]
-    model = FCN(in_dim, 10, batch_norm=True)
-    trainer = ModelTrainer(model, train_ds, val_ds, config=config, log_wandb=True, checkpoint_cache=True, experiment_name="GB1")
+    model = FCN(in_dim, 10)
+    trainer = ModelTrainer(model, train_ds, val_ds, config=config, log_wandb=True, checkpoint_cache=True, experiment_name="GB1_nobn")
     model = trainer.train_model()
 
 if __name__ == "__main__":

@@ -204,6 +204,11 @@ class ModelTrainer:
 
             # Save checkpoint
             if self.checkpoint_cache:
+                # Best model
+                if epoch_log["val_mse_loss"] == epoch_log["min_val_mse_loss"]:
+                    self.save_model(epoch, best=True)
+
+                # Interval checkpoints
                 if (epoch % self.checkpoint_interval == 0) or (epoch == self.config["num_epochs"]-1):
                     self.save_model(epoch)
         
@@ -276,7 +281,7 @@ class ModelTrainer:
         
         return model_dir
     
-    def save_model(self, epoch):
+    def save_model(self, epoch, best=False):
         # Save torch stuff
         model_dir = self.get_model_dir()
         checkpoint = { 
@@ -285,19 +290,23 @@ class ModelTrainer:
                 'optimizer': self.optim.state_dict(),
                 'scheduler': self.scheduler.state_dict(),
             }
-        torch.save(checkpoint, f'{model_dir}/{epoch}.pth')
+        
+        if best:
+            torch.save(checkpoint, f'{model_dir}/best.pth')
+        else:
+            torch.save(checkpoint, f'{model_dir}/{epoch}.pth')
 
-        # Save logs (+remove older ones)
-        for f in glob.glob(f'{model_dir}/log*.json'):
-            os.remove(f)
-        with open(f'{model_dir}/log{epoch}.json', 'w') as fp:
-            json.dump(self.logs, fp)
-
-        # Save Fourier spectrums (+remove older ones)
-        if self.report_epoch_fourier:
-            for f in glob.glob(f'{model_dir}/spectrums*.npy'):
+            # Save logs (+remove older ones)
+            for f in glob.glob(f'{model_dir}/log*.json'):
                 os.remove(f)
-            np.save(f'{model_dir}/spectrums{epoch}.npy', self.spectrums, allow_pickle=True)
+            with open(f'{model_dir}/log{epoch}.json', 'w') as fp:
+                json.dump(self.logs, fp)
+
+            # Save Fourier spectrums (+remove older ones)
+            if self.report_epoch_fourier:
+                for f in glob.glob(f'{model_dir}/spectrums*.npy'):
+                    os.remove(f)
+                np.save(f'{model_dir}/spectrums{epoch}.npy', self.spectrums, allow_pickle=True)
         
 
     def load_model(self, epoch):
@@ -329,7 +338,8 @@ class ModelTrainer:
     
     def load_from_latest_checkpoint(self):
         model_dir = self.get_model_dir()
-        available_epochs = [int(os.path.basename(f).split(".")[0]) for f in glob.glob(f"{model_dir}/*.pth")]
+        available_epochs = [int(os.path.basename(f).split(".")[0]) for f in glob.glob(f"{model_dir}/*.pth") 
+                            if os.path.basename(f) != 'best.pth']
         if len(available_epochs) > 0:
             latest_epoch = max(available_epochs)
             self.load_model(latest_epoch)
@@ -376,7 +386,7 @@ class ModelTrainer:
             hadamard_loss = F.l1_loss(Y, torch.zeros_like(Y))
 
             hadamard_times.append(time.time() - hadamard_start)
-            batch_hadamard_loss.append(hadamard_loss)
+            batch_hadamard_loss.append(hadamard_loss.item())
             loss += self.config["hadamard_lambda"] * hadamard_loss
 
             loss.backward()
@@ -385,7 +395,7 @@ class ModelTrainer:
         return RSS, {
             'hadamard_time': sum(hadamard_times),
             'hadamard_iteration_time': np.mean(hadamard_times),
-            'hashing_loss': torch.mean(torch.stack(batch_hadamard_loss)).item(),
+            'hashing_loss': np.mean(batch_hadamard_loss),
         }
     
     def EN_epoch(self):
@@ -436,7 +446,7 @@ class ModelTrainer:
             wht_diff = wht_out - torch.tensor(self.Hu, dtype=torch.float, device=device) + torch.tensor(self.lam, dtype=torch.float, device=device)
             reg_loss = self.config["rho"]/2 * l2_loss(wht_diff,torch.zeros_like(wht_diff))
             loss += self.config["hadamard_lambda"] * reg_loss
-            batch_hadamard_loss.append(reg_loss)
+            batch_hadamard_loss.append(reg_loss.item())
 
             loss.backward()
             self.optim.step()
@@ -473,5 +483,5 @@ class ModelTrainer:
             'network_update_time': network_update_time,
             'hadamard_time': time.time() - hadamard_start,
             'fourier_time': time.time() - fourier_start,
-            'ENS_loss': torch.mean(torch.stack(batch_hadamard_loss)).item(),
+            'ENS_loss': np.mean(batch_hadamard_loss),
         }

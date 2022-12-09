@@ -14,7 +14,7 @@ parameters:
   num_epochs:
     values: [500]
   epoch_iterations:
-    values: [1, 10, 50]
+    values: [50]
   random_seed:
     values: [11, 22, 33, 44, 55]
   fix_seed:

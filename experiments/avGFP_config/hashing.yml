@@ -8,17 +8,17 @@ parameters:
   training_method:
     values: ['hashing']
   b:
-    values: [10, 11, 12, 13, 14]
+    values: [10, 11, 12, 14]
   hadamard_lambda:
-    values: [0.0001, 0.001]
+    values: [0.001, 0.0001]
   lr:
     values: [0.01, 0.001]
   weight_decay:
     values: [0.0]
   num_epochs:
-    values: [1000]
+    values: [500]
   epoch_iterations:
-    values: [10, 25, 50]
+    values: [25, 50]
   random_seed:
     values: [11, 22, 33, 44, 55]
   fix_seed:
@@ -26,4 +26,4 @@ parameters:
   fix_dataset:
     values: [True]
   train_size:
-    values: [20000]
+    values: [500, 1000, 2000]
