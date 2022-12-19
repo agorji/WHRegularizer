@@ -1,0 +1,31 @@
+program: low_degree.py
+method: grid
+name: low_degree_normal
+metric:
+  goal: maximize
+  name: max_val_r2
+parameters:
+  training_method:
+    values: ["normal"]
+  n:
+    values: [10]
+  k:
+    values: [5, 10]
+  lr:
+    values: [0.01, 0.001]
+  epoch_iterations:
+    values: [10]
+  weight_decay:
+    values: [0.0]
+  num_epochs:
+    values: [500]
+  dataset_size_coef:
+    values: [0.1, 0.5, 0.75, 1]
+  random_seed:
+    values: [11, 22, 33, 44, 55, 66, 77, 88, 99, 110]
+  fix_seed:
+    values: [1, 2, 3]
+  freq_sampling_method:
+    values: ["single_deg"]
+  amp_sampling_method:
+    values: ["constant"]

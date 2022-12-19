@@ -36,13 +36,6 @@ def hadamard_matrix(n, normalize=False):
         H = (1 / math.sqrt(2**n)) * H
     return H
 
-def get_sample_inputs(n, b):
-    hash_sigma = (torch.rand(b, n) < 0.5).float() # multivariate bernouli with p=0.5
-    hash_inputs = torch.asarray(list((product((0.0,1.0), repeat=b))))
-
-    sample_inputs = (hash_inputs @ hash_sigma ) % 2
-    return sample_inputs
-
 def hash_dict(dictionary):
     """MD5 hash of a dictionary."""
     dhash = hashlib.md5()
@@ -50,9 +43,79 @@ def hash_dict(dictionary):
     dhash.update(encoded)
     return dhash.hexdigest()
 
+def get_bounded_degree_indices(n, deg_bound):
+    """ Returns indices of frequencies with degrees up to the given upper bound 
+
+    Parameters:
+        n: int
+            - the dimension of the space
+        deg_bound:
+            - the upper bound for acceptable degrees
+    """
+    degs = np.sum(list(product([0, 1], repeat=n)), axis=1)
+    return list(np.where(degs <= deg_bound)[0])
+
+def signal_error(ground_amps, learned_amps):
+    return (np.sum((learned_amps-ground_amps)**2) / np.sum(ground_amps**2)).item()
+
+
+class HashingLoss:
+    def __init__(self, n: int, b: int, deg_bound: int=None, device: str="cuda"):
+        """ The  class for computing hashing loss
+
+        Parameters:
+            n: int
+                - the dimension of the original space
+            b: int
+                - the dimension of the hashing space
+            deg_bound: int (default: None)
+                - the upper bound for the degree of frequencies involved in the loss computation
+            device: str (default: "cuda")
+                - device of the torch tensors
+        """
+        self.n = n
+        self.b = b
+        self.deg_bound = deg_bound
+        self.device = device
+
+        self.H = hadamard_matrix(b, normalize=False).to(device)
+        if deg_bound is not None:
+            self.bounded_degree_indices = self.get_bounded_degree_indices()
+    
+    def get_sample_inputs(self):
+        """ Returns input samples sampled by a uniformly random hash matrix """
+        hash_sigma = (torch.rand(self.b, self.n) < 0.5).float() # multivariate bernouli with p=0.5
+        hash_inputs = torch.asarray(list((product((0.0,1.0), repeat=self.b))))
+
+        sample_inputs = (hash_inputs @ hash_sigma ) % 2
+        return sample_inputs
+
+    def get_bounded_degree_indices(self):
+        """ Returns indices of frequencies with degrees up to the given upper bound """
+        degs = np.sum(list(product([0, 1], repeat=self.b)), axis=1)
+        return list(np.where(degs <= self.deg_bound)[0])
+    
+    def compute_loss(self, model):
+        """ Computes L1 norm of approximated (bounded) amplitudes """
+        # Find the sample inputs using the hashing scheme
+        sample_inputs = self.get_sample_inputs()
+        sample_inputs = sample_inputs.to(self.device)
+
+        # Compute the Hadamard transform of sample_inputs
+        X = model(sample_inputs)
+
+        ## Limit freqs to bounded degree if requested
+        if self.deg_bound is None:
+            Y = self.H @ X
+        else:
+            freq_indices = self.bounded_degree_indices
+            Y = self.H[freq_indices] @ X
+
+        return F.l1_loss(Y, torch.zeros_like(Y))
+
 
 class ModelTrainer:
-    def __init__(self, model: nn.Module, train_ds: Dataset, val_ds: Dataset, config: Dict, device = "cuda", log_wandb = False, checkpoint_cache=False, checkpoint_interval=25,
+    def __init__(self, model: nn.Module, train_ds: Dataset, val_ds: Dataset, config: Dict, device = "cuda", log_wandb = False, checkpoint_cache=True, checkpoint_interval=25,
                     report_epoch_fourier=False, print_logs=True, plot_results=False, experiment_name="default", **kwargs):
         '''
             Trains a torch model given the dataset and the training method.
@@ -100,32 +163,41 @@ class ModelTrainer:
         if training_method == "normal":
             self.train_epoch = self.normal_epoch
 
-        elif training_method == "EN":
+        elif training_method == "EN" or training_method == "bounded_EN":
             self.train_epoch = self.EN_epoch
             self.all_inputs = torch.asarray(list((product((0,1), repeat=self.n)))).float().to(device)
             self.H = hadamard_matrix(self.n, normalize=True).to(device)
+            if training_method == "bounded_EN":
+                self.H = self.H[get_bounded_degree_indices(self.n, config["deg_bound"])]
 
-        elif training_method == "EN-S":
+        elif training_method == "EN-S" or training_method == "EN-S_data":
             self.train_epoch = self.ENS_epoch
             self.spright_sample = SPRIGHTSample(self.n, config["b"], config["SPRIGHT_d"], random_seed=config["random_seed"])
-            self.X_all = np.concatenate(
+            self.X_fourier = np.concatenate(
                 (
                     np.vstack(self.spright_sample.sampling_locations[0]),
                     np.vstack(self.spright_sample.sampling_locations[1]),
                     np.vstack(self.spright_sample.sampling_locations[2])
                 )
             )
-            self.X_all, self.X_all_inverse_ind = np.unique(self.X_all, axis=0, return_inverse='True')
-            X_all_ds = TensorDataset(torch.from_numpy(self.X_all).to("cpu"), torch.zeros(self.X_all.shape[0], device="cpu"))
-            self.X_all_loader = DataLoader(X_all_ds, batch_size=EVAL_BATCH_SIZE)
+            self.X_fourier, self.X_fourier_inverse_ind = np.unique(self.X_fourier, axis=0, return_inverse='True')
+            self.X_loss = self.X_fourier
+            if training_method == "EN-S_data":
+                X_train = train_ds[:][0]
+                self.X_loss = X_train
 
             # initialzie ADMM 
-            self.Hu = np.zeros(len(self.X_all))
-            self.lam = np.zeros(len(self.X_all))
+            self.Hu = np.zeros(len(self.X_loss))
+            self.lam = np.zeros(len(self.X_loss))
 
         elif training_method == "hashing":
             self.train_epoch = self.hashing_epoch
-            self.H = hadamard_matrix(config["b"], normalize=False).to(device)
+            self.hash_loss = HashingLoss(self.n, config["b"], device=device)
+
+
+        elif training_method == "bounded_hashing":
+            self.train_epoch = self.hashing_epoch
+            self.hash_loss = HashingLoss(self.n, config["b"], config["deg_bound"], device=device)
             
         else:
             raise Exception(f"'{training_method}' training method is not yet implemented.")
@@ -187,6 +259,7 @@ class ModelTrainer:
                 # Log R2 of learned amps
                 learned_amps = self.spectrums[-1][self.args["int_freqs"]]
                 epoch_log["amp_r2"] = r2_score(self.args["amps"], learned_amps)
+                epoch_log["signal_error"] = signal_error(self.args["amps"], learned_amps)
 
             # Compute aggregated metrics
             self.logs.append(epoch_log)
@@ -194,6 +267,7 @@ class ModelTrainer:
             epoch_log["min_val_mse_loss"] = min([l["val_mse_loss"] for l in self.logs])
             if self.report_epoch_fourier:
                 epoch_log["max_amp_r2"] = max([l["amp_r2"] for l in self.logs])
+                epoch_log["min_signal_error"] = min([l["signal_error"] for l in self.logs])
 
             # Logging
             if self.print_logs:
@@ -261,8 +335,8 @@ class ModelTrainer:
         fig, axes = plt.subplots(1, 2, figsize=(8, 3), sharex=True)
         fig.suptitle(self.config["training_method"])
 
-        sns.lineplot(loss_data, ax=axes[0])
-        sns.lineplot(r2_data, ax=axes[1])
+        sns.lineplot(data=loss_data, ax=axes[0])
+        sns.lineplot(data=r2_data, ax=axes[1])
         axes[1].set_ylim(0, 1)
 
     def get_model_dir(self):
@@ -363,7 +437,7 @@ class ModelTrainer:
         
         return RSS, {}
     
-    def hashing_epoch(self):
+    def hashing_epoch(self, limit_deg=None):
         device = self.device
         batch_hadamard_loss = []
         hadamard_times = []
@@ -375,16 +449,9 @@ class ModelTrainer:
             loss = F.mse_loss(y, y_hat)
             RSS += torch.sum((y_hat-y)**2).item()
 
-            # Find the sample inputs using the hashing scheme
-            sample_inputs = get_sample_inputs(self.n, self.config["b"])
-            sample_inputs = sample_inputs.to(device)
-
             # Compute the Hadamard transform of sample_inputs and add to loss
             hadamard_start = time.time()
-            X = self.model(sample_inputs)
-            Y = self.H @ X
-            hadamard_loss = F.l1_loss(Y, torch.zeros_like(Y))
-
+            hadamard_loss = self.hash_loss.compute_loss(self.model)
             hadamard_times.append(time.time() - hadamard_start)
             batch_hadamard_loss.append(hadamard_loss.item())
             loss += self.config["hadamard_lambda"] * hadamard_loss
@@ -442,7 +509,7 @@ class ModelTrainer:
             loss = F.mse_loss(y, y_hat)
             RSS += torch.sum((y_hat-y)**2).item()
 
-            wht_out = self.model(torch.tensor(self.X_all, dtype=torch.float, device=device)).reshape(-1)
+            wht_out = self.model(torch.tensor(self.X_loss, dtype=torch.float, device=device)).reshape(-1)
             wht_diff = wht_out - torch.tensor(self.Hu, dtype=torch.float, device=device) + torch.tensor(self.lam, dtype=torch.float, device=device)
             reg_loss = self.config["rho"]/2 * l2_loss(wht_diff,torch.zeros_like(wht_diff))
             loss += self.config["hadamard_lambda"] * reg_loss
@@ -454,30 +521,24 @@ class ModelTrainer:
         
         hadamard_start = time.time()
 
-        # with torch.no_grad():
-        #     y_hat_alls = []
-        #     for X, _ in self.X_all_loader:
-        #         y_hat_all = self.model(X.float().to(device))
-        #         y_hat_alls.append(y_hat_all.cpu().numpy().flatten())
-        # y_hat_all = np.concatenate(y_hat_alls)
         with torch.no_grad():
-            y_hat_all = self.model(torch.tensor(self.X_all, dtype=torch.float, device=device))
-            y_hat_all = y_hat_all.cpu().numpy().flatten()
+            y_hat_fourier = self.model(torch.tensor(self.X_fourier, dtype=torch.float, device=device))
+            y_hat_fourier = y_hat_fourier.cpu().numpy().flatten()
 
         # run spright to do fast sparse WHT
         fourier_start = time.time()
         spright = SPRIGHT('frame', [1,2,3], self.spright_sample)
-        spright.set_train_data(self.X_all,  y_hat_all + self.lam, self.X_all_inverse_ind)
+        spright.set_train_data(self.X_fourier,  y_hat_fourier + self.lam, self.X_fourier_inverse_ind)
         # spright.model_to_remove = self.model
         flag = spright.initial_run()
         if flag:
             spright.peel_rest()
             
-            M = make_system_simple(np.vstack(spright.model.support), self.X_all)
+            M = make_system_simple(np.vstack(spright.model.support), self.X_loss)
             self.Hu = np.dot(M,spright.model.coef_)
             
             # update the dual 
-            self.lam = self.lam + y_hat_all - self.Hu
+            self.lam = self.lam + y_hat_fourier - self.Hu
         
         return RSS, {
             'network_update_time': network_update_time,

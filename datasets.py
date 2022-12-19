@@ -39,6 +39,10 @@ class FourierDataset(Dataset):
             self.freq_f = self.uniform_deg_freq(d)
         elif freq_sampling_method == "fixed_deg":
             self.freq_f = self.fixed_deg_freq(d)
+        elif freq_sampling_method == "single_deg":
+            if self.k > self.n:
+                raise Exception("k cannot be bigger than n in fixed_deg.")
+            self.freq_f = self.single_deg_freq()
         elif freq_sampling_method == "bernouli":
             self.freq_f = self.bernouli_freq(p_freq)
         else:
@@ -94,6 +98,20 @@ class FourierDataset(Dataset):
                 if new_f not in freqs:
                     freqs.append(new_f)
                     is_duplicate = False
+        return torch.tensor(freqs).float()
+
+    def single_deg_freq(self):
+        freqs = []
+        weights = torch.ones(self.n)
+        for i in range(self.k):
+            deg = i + 1
+
+            one_indices = torch.multinomial(weights, deg, generator=self.generator)
+            new_f = torch.zeros(self.n).float()
+            new_f[one_indices] = 1.0
+            new_f = new_f.tolist()
+            freqs.append(new_f)
+
         return torch.tensor(freqs).float()
 
     def fixed_deg_freq(self, d):
