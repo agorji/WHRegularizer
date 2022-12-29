@@ -16,7 +16,7 @@ parameters:
   hashing_discount:
     values: [0]
   SPRIGHT_d:
-    values: [3, 5, 7]
+    values: [3]
   rho:
     values: [0.01]
   hadamard_lambda:
@@ -27,10 +27,10 @@ parameters:
     values: [0.0]
   num_epochs:
     values: [200]
-  epoch_iterations:
-    values: [10, 25, 50]
+  batch_size:
+    values: [128]
   dataset_size_coef:
-    values: [5, 10, 20, 50]
+    values: [5, 10, 25]
   random_seed:
     values: [11, 22, 33, 44, 55]
   fix_seed:

@@ -1,34 +1,34 @@
-program: spectrum_convergence.py
+program: test_fourier.py
 method: grid
-name: sc_ens
+name: big_n_alternate
 metric:
   goal: maximize
   name: max_val_r2
 parameters:
   training_method:
-    values: ['EN-S']
+    values: ['alternate']
   n:
-    values: [8, 10, 12]
+    values: [25, 50, 100]
+  k:
+    values: [25]
   d:
-    values: [4]
+    values: [5]
   hashing_discount:
     values: [0]
   SPRIGHT_d:
     values: [3]
-  rho:
-    values: [0.01]
   hadamard_lambda:
-    values: [1]
+    values: [1, 0.1, 0.01]
   lr:
     values: [0.01]
   weight_decay:
     values: [0.0]
   num_epochs:
-    values: [500]
+    values: [200]
   batch_size:
-    values: [16]
+    values: [128]
   dataset_size_coef:
-    values: [1, 2, 4, 8]
+    values: [5, 10, 25]
   random_seed:
     values: [11, 22, 33, 44, 55]
   fix_seed:

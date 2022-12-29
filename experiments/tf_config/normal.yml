@@ -19,10 +19,10 @@ parameters:
     values: [0.0]
   num_epochs:
     values: [200]
-  epoch_iterations:
-    values: [10, 25, 50]
+  batch_size:
+    values: [128]
   dataset_size_coef:
-    values: [5, 10, 20, 50]
+    values: [5, 10, 25]
   random_seed:
     values: [11, 22, 33, 44, 55]
   fix_seed:

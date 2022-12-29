@@ -135,3 +135,6 @@ cache/
 
 # Data files
 data/
+
+# Bash scripts
+*.sh

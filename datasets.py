@@ -269,6 +269,38 @@ class avGFPDataset(Dataset):
 
         return torch.from_numpy(X).float(), torch.Tensor(aggregated_df["medianBrightness"]).float()
 
+class EntacmaeaDataset(Dataset):
+    def __init__(self, use_cache=True):
+        # Load from storage if requested and available
+        if use_cache:
+            cache_file = f"{DATA_PATH}/quadricolor_fluorscent.pt"
+            if os.path.exists(cache_file):
+                self.X, self.y = torch.load(cache_file)
+                print("Loaded dataset from cache.")
+                return
+
+        # Load data
+        data_file = f"{DATA_PATH}/quadricolor_fluorscent.csv"
+        if os.path.exists(data_file):
+            data_df = pd.read_csv(data_file)
+        else:
+            raise Exception(f"Could not find GB1 data in '{data_file}'")
+        
+        self.mutations = data_df["genotype"]
+        # Convert input binary strings to tensors
+        self.mutations = [[int(bit) for bit in m[1:-1]]
+                            for m in self.mutations]
+        self.X = torch.Tensor(self.mutations).float()
+        self.y = torch.Tensor(data_df["brightness"]).float()
+
+        if use_cache:
+            torch.save((self.X, self.y), cache_file)
+        
+    def __len__(self):
+        return len(self.X)
+
+    def __getitem__(self, i):
+        return self.X[i], self.y[i]
 
 if __name__ == "__main__":
     ds = GB1Dataset()
@@ -277,6 +309,11 @@ if __name__ == "__main__":
     print(ds.y[:5])
 
     ds = avGFPDataset()
+    print(ds.X.shape)
+    print(ds.X[:5])
+    print(ds.y[:5])
+
+    ds = EntacmaeaDataset()
     print(ds.X.shape)
     print(ds.X[:5])
     print(ds.y[:5])

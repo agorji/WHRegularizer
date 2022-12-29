@@ -1,31 +1,31 @@
-program: spectrum_convergence.py
+program: gb1.py
 method: grid
-name: sc_en
+name: gb1_alternate
 metric:
   goal: maximize
   name: max_val_r2
 parameters:
   training_method:
-    values: ['EN']
-  n:
-    values: [8, 10, 12]
-  d:
-    values: [4]
+    values: ['alternate']
+  b:
+    values: [9]
+  SPRIGHT_d:
+    values: [3]
   hadamard_lambda:
     values: [1, 0.1, 0.01]
   lr:
-    values: [0.01]
+    values: [0.01, 0.001]
   weight_decay:
     values: [0.0]
   num_epochs:
-    values: [500]
-  dataset_size_coef:
-    values: [1, 2, 4, 8]
-  batch_size:
-    values: [16]
+    values: [200]
+  epoch_iterations:
+    values: [50]
   random_seed:
     values: [11, 22, 33, 44, 55]
   fix_seed:
     values: [1, 2, 3]
   fix_dataset:
     values: [True]
+  train_size:
+    values: [2000]

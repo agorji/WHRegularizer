@@ -70,17 +70,17 @@ def main():
     val_ds = torch.utils.data.Subset(dataset, list(range(config["train_size"], dataset_size)))
 
     # Set batch size
-    config["batch_size"] = math.ceil(config["train_size"] / config["epoch_iterations"])
+    # config["batch_size"] = math.ceil(config["train_size"] / config["epoch_iterations"])
 
     # Train model
-    remove_from_train_config = ["hashing_discount", "dataset_size_coef", "val_size", "epoch_iterations"]
+    remove_from_train_config = ["hashing_discount", "dataset_size_coef", "val_size"]
     train_config = {k:v for k, v in config.items() if k not in remove_from_train_config}
 
     torch.manual_seed(config["random_seed"]) # Seed for network initialization
     in_dim = dataset.X.shape[1]
     model = FCN(in_dim, 2)
     trainer = ModelTrainer(model, train_ds, val_ds, config=train_config, log_wandb=True, checkpoint_cache=True, 
-                            experiment_name="test_fourier_fix_deg")
+                            experiment_name="synthetic")
     model = trainer.train_model()
 
 if __name__ == "__main__":

@@ -52,50 +52,33 @@ def main():
     print(wandb.config)
 
     n = wandb.config.n
-    k = wandb.config.n
-    d = math.ceil(n/2)
     config = wandb.config
-    config["k"] = k
-    config["d"] = d
-    config["b"] = math.ceil(math.log2(k)) + config.get("hashing_discount", 0)
+    config["k"] = n
+    config["b"] = math.ceil(math.log2(config["k"])) + config.get("hashing_discount", 0)
 
     # Dataset params
-    config["train_size"] = math.ceil(config["dataset_size_coef"] * k * n)
+    config["train_size"] = math.ceil(config["dataset_size_coef"] * config["k"] * n)
     config["val_size"] =  2**n - config["train_size"]
-    dataset_size = config["train_size"] + config["val_size"]
-    random_seed = config["freq_seed"] if config.get("fix_dataset", False) else config["random_seed"]
-
-    # Set batch size
-    config["epoch_iterations"] = config.get("SPRIGHT_d", 1)
-    batch_size = config["train_size"] / config["epoch_iterations"]
-    a = 1
-    while(a * 1.25 < batch_size):
-        a *= 2
-    config["batch_size"] = a
+    dataset_size = 2**n
+    random_seed = config["fix_seed"] if config.get("fix_dataset", False) else config["random_seed"]
+    if config["train_size"] >= dataset_size:
+        raise Exception("Impossible (large) training size given:", config["train_size"])
 
     # Dataset
-    dataset = FourierDataset(n, k, d=d, n_samples=dataset_size, random_seed=random_seed, freq_seed=config["freq_seed"])
+    dataset = FourierDataset(n, config["k"], d=config["d"], n_samples=dataset_size, amp_sampling_method="constant", random_seed=random_seed)
     train_ds = torch.utils.data.Subset(dataset, list(range(config["train_size"])))
     val_ds = torch.utils.data.Subset(dataset, list(range(config["train_size"], dataset_size)))
 
-    # Check if live log is available
-    wandb_logs = get_wandb_logs(run.path, config)
-    if (wandb_logs is not None) and len(wandb_logs) >= config["num_epochs"]:
-        print("Reporting the available online run logs...")
-        for l in wandb_logs:
-            wandb.log(l)
-        return
-
     # Train model
-    remove_from_train_config = ["hashing_discount", "dataset_size_coef", "val_size", "epoch_iterations"]
-    train_config = {k:v for k, v in config.items() if k not in remove_from_train_config}    
+    remove_from_train_config = ["hashing_discount", "dataset_size_coef", "val_size"]
+    train_config = {k:v for k, v in config.items() if k not in remove_from_train_config}
 
     torch.manual_seed(config["random_seed"]) # Seed for network initialization
     in_dim = dataset.X.shape[1]
-    model = FCN(in_dim, 2)
-    args = {"int_freqs": dataset.get_int_freqs(), "amps":dataset.amp_f.cpu().numpy()}
+    model = FCN(in_dim, 10)
+    args = {"data_freqs": dataset.get_int_freqs(), "data_spectrum": dataset.get_fourier_spectrum() * (2**(n/2) / config["k"])}
     trainer = ModelTrainer(model, train_ds, val_ds, config=train_config, log_wandb=True, report_epoch_fourier=True, 
-                            experiment_name="test_fourier", checkpoint_interval=100, **args)
+                            experiment_name="spectrum", checkpoint_interval=100, **args)
     spectrums = trainer.train_model()
 
 if __name__ == "__main__":

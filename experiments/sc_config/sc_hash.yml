@@ -1,6 +1,6 @@
 program: spectrum_convergence.py
 method: grid
-name: amp_r2_test_hash
+name: sc_hash
 metric:
   goal: maximize
   name: max_val_r2
@@ -8,24 +8,26 @@ parameters:
   training_method:
     values: ['hashing']
   n:
-    values: [8, 10, 12, 14]
+    values: [8, 10, 12]
+  d:
+    values: [4]
   hashing_discount:
     values: [0, 1, 2, 4]
-  SPRIGHT_d:
-    values: [3, 5, 7]
   hadamard_lambda:
-    values: [0.01, 0.005, 0.001, 0.0005]
+    values: [0.001]
   lr:
     values: [0.01]
   weight_decay:
     values: [0.0]
   num_epochs:
     values: [500]
+  batch_size:
+    values: [16]
   dataset_size_coef:
-    values: [0.5, 1, 2, 4]
+    values: [1, 2, 4, 8]
   random_seed:
     values: [11, 22, 33, 44, 55]
-  freq_seed:
+  fix_seed:
     values: [1, 2, 3]
   fix_dataset:
     values: [True]
