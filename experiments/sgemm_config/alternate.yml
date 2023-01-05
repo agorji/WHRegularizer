@@ -1,37 +1,38 @@
-program: test_fourier.py
+program: real_dataset.py
 method: grid
-name: big_n_alternate
+name: alternate
 metric:
   goal: maximize
   name: max_val_r2
+
 parameters:
+  dataset:
+    values: ['SGEMM']
   training_method:
     values: ['alternate']
-  n:
-    values: [25, 50, 100]
-  k:
-    values: [25]
-  d:
-    values: [5]
-  hashing_discount:
-    values: [2, 4]
+  b:
+    values: [7]
   SPRIGHT_d:
     values: [3]
   hadamard_lambda:
     values: [1, 0.1, 0.01]
+  network_c:
+    values: [10]
   lr:
-    values: [0.01]
+    values: [0.01, 0.001]
   weight_decay:
     values: [0.0]
   num_epochs:
     values: [200]
   batch_size:
-    values: [64]
-  dataset_size_coef:
-    values: [2, 4, 8, 16]
+    values: [16]
   random_seed:
     values: [11, 22, 33, 44, 55]
   fix_seed:
-    values: [1, 2, 3]
-  fix_dataset:
+    values: [1, 2, 3, 4 , 5]
+  train_size:
+    values: [50, 100, 200, 400, 1000]
+  val_size:
+    values: [20000]
+  normalize_data:
     values: [True]

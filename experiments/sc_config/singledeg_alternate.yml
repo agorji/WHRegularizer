@@ -1,18 +1,22 @@
 program: spectrum_convergence.py
 method: grid
-name: sc_en
+name: sc_alternate
 metric:
   goal: maximize
   name: max_val_r2
 parameters:
   training_method:
-    values: ['EN']
+    values: ['alternate']
   n:
-    values: [8, 10, 12]
+    values: [10]
   d:
-    values: [4]
+    values: [4, 5]
+  hashing_discount:
+    values: [2]
   hadamard_lambda:
     values: [1, 0.1, 0.01]
+  SPRIGHT_d:
+    values: [5]
   lr:
     values: [0.01]
   weight_decay:
@@ -20,12 +24,16 @@ parameters:
   num_epochs:
     values: [500]
   dataset_size_coef:
-    values: [1, 2, 4, 8]
+    values: [1, 2, 3, 4]
   batch_size:
     values: [16]
   random_seed:
-    values: [11, 22, 33, 44, 55, 66, 77, 88, 99, 110]
+    values: [111, 222, 333, 444, 555]
+  sample_seed:
+    values: [11, 22, 33, 44, 55]
   fix_seed:
-    values: [1, 2, 3, 4, 5, 6]
+    values: [1, 2, 3, 4, 5]
   fix_dataset:
     values: [True]
+  freq_sampling_method:
+    values: ["single_deg"]

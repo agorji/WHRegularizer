@@ -53,19 +53,28 @@ def main():
 
     n = wandb.config.n
     config = wandb.config
-    config["k"] = n
+    if config.get("freq_sampling_method", None) == "single_deg":
+        config["k"] = config["d"]
+    else:
+        config["k"] = config["n"]
     config["b"] = math.ceil(math.log2(config["k"])) + config.get("hashing_discount", 0)
 
     # Dataset params
     config["train_size"] = math.ceil(config["dataset_size_coef"] * config["k"] * n)
     config["val_size"] =  2**n - config["train_size"]
     dataset_size = 2**n
-    random_seed = config["fix_seed"] if config.get("fix_dataset", False) else config["random_seed"]
     if config["train_size"] >= dataset_size:
         raise Exception("Impossible (large) training size given:", config["train_size"])
+    
+    dataset_args = {"random_seed": config["fix_seed"] if config.get("fix_dataset", False) else config["random_seed"]}
+    if "freq_sampling_method" in config:
+        dataset_args["freq_sampling_method"] = config["freq_sampling_method"]
+    if "sample_seed" in config:
+        dataset_args["freq_seed"] = config["fix_seed"]
+        dataset_args["random_seed"] = config["sample_seed"]
 
     # Dataset
-    dataset = FourierDataset(n, config["k"], d=config["d"], n_samples=dataset_size, amp_sampling_method="constant", random_seed=random_seed)
+    dataset = FourierDataset(n, config["k"], d=config["d"], n_samples=dataset_size, amp_sampling_method="constant", **dataset_args)
     train_ds = torch.utils.data.Subset(dataset, list(range(config["train_size"])))
     val_ds = torch.utils.data.Subset(dataset, list(range(config["train_size"], dataset_size)))
 

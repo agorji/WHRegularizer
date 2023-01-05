@@ -1,26 +1,25 @@
-program: test_fourier.py
+program: real_dataset.py
 method: grid
-name: big_n_spright
+name: ens
 metric:
   goal: maximize
   name: max_val_r2
+
 parameters:
+  dataset:
+    values: ['Entacmaea']
   training_method:
     values: ['EN-S']
-  n:
-    values: [25, 50, 100]
-  k:
-    values: [25]
-  d:
-    values: [5]
-  hashing_discount:
-    values: [1]
+  b:
+    values: [5, 7]
   SPRIGHT_d:
     values: [3]
   rho:
     values: [0.01]
   hadamard_lambda:
     values: [1]
+  network_c:
+    values: [10]
   lr:
     values: [0.01]
   weight_decay:
@@ -28,12 +27,12 @@ parameters:
   num_epochs:
     values: [200]
   batch_size:
-    values: [64]
-  dataset_size_coef:
-    values: [2, 4, 8, 16]
+    values: [16]
   random_seed:
     values: [11, 22, 33, 44, 55]
   fix_seed:
-    values: [1, 2, 3]
-  fix_dataset:
+    values: [1, 2, 3, 4 , 5]
+  train_size:
+    values: [20, 40, 60, 80, 100, 120, 140, 160, 180, 200]
+  normalize_data:
     values: [True]

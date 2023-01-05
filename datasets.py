@@ -65,6 +65,8 @@ class FourierDataset(Dataset):
         while self.X.shape[0] < n_samples:
             self.X = torch.vstack([self.X, (torch.rand(n_samples - self.X.shape[0], n, generator=self.generator) < p_t).float()])
             self.X = torch.unique(self.X, dim=0)
+        
+        self.X = self.X[torch.randperm(n_samples)]
         self.y = self.compute_y(self.X)
 
         if use_cache:
@@ -302,6 +304,46 @@ class EntacmaeaDataset(Dataset):
     def __getitem__(self, i):
         return self.X[i], self.y[i]
 
+class SGEMMDataset(Dataset):
+    def __init__(self, use_cache=True):
+        # Load from storage if requested and available
+        if use_cache:
+            cache_file = f"{DATA_PATH}/sgemm.pt"
+            if os.path.exists(cache_file):
+                self.X, self.y = torch.load(cache_file)
+                print("Loaded dataset from cache.")
+                return
+
+        # Load data
+        data_file = f"{DATA_PATH}/sgemm.csv"
+        if os.path.exists(data_file):
+            data_df = pd.read_csv(data_file)
+        else:
+            raise Exception(f"Could not find SGEMM data in '{data_file}'")
+        
+        # Aggregate runtimes
+        runtime_columns = ["Run1 (ms)","Run2 (ms)","Run3 (ms)","Run4 (ms)"]
+        data_df["time"] = np.mean(data_df[runtime_columns], axis=1)
+        data_df = data_df.drop(columns=runtime_columns)
+
+        self.X = data_df.drop(columns=["time"])
+        self._one_hot_transform()
+        self.X = torch.Tensor(self.X).float()
+        self.y = torch.Tensor(data_df["time"]).float()
+
+        if use_cache:
+            torch.save((self.X, self.y), cache_file)
+        
+    def _one_hot_transform(self):
+        self.enc = OneHotEncoder(sparse=False, drop="if_binary")
+        self.X = self.enc.fit_transform(self.X)
+        
+    def __len__(self):
+        return len(self.X)
+
+    def __getitem__(self, i):
+        return self.X[i], self.y[i]
+
 if __name__ == "__main__":
     ds = GB1Dataset()
     print(ds.X.shape)
@@ -314,6 +356,11 @@ if __name__ == "__main__":
     print(ds.y[:5])
 
     ds = EntacmaeaDataset()
+    print(ds.X.shape)
+    print(ds.X[:5])
+    print(ds.y[:5])
+
+    ds = SGEMMDataset()
     print(ds.X.shape)
     print(ds.X[:5])
     print(ds.y[:5])
