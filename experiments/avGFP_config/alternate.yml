@@ -4,34 +4,35 @@ name: alternate
 metric:
   goal: maximize
   name: max_val_r2
-
 parameters:
   dataset:
-    values: ['SGEMM']
+    values: ['avGFP']
   training_method:
     values: ['alternate']
+  network_c:
+    values: [1]
   b:
-    values: [7]
+    values: [5]
   SPRIGHT_d:
     values: [3]
   hadamard_lambda:
-    values: [1, 0.1, 0.01]
-  network_c:
-    values: [10]
+    values: [0.5, 0.1, 0.01]
+  intense_regularization:
+    values: [True, False]
   lr:
     values: [0.01]
   weight_decay:
     values: [0.0]
   num_epochs:
-    values: [200]
+    values: [100]
   batch_size:
     values: [16]
   random_seed:
     values: [11, 22, 33, 44, 55]
   fix_seed:
-    values: [1, 2, 3, 4 , 5]
+    values: [1, 2, 3]
   train_size:
-    values: [20, 40, 60, 80, 100, 120, 140, 160, 180, 200]
+    values: [200, 400, 600, 800, 1000]
   val_size:
     values: [20000]
   normalize_data:

@@ -158,6 +158,10 @@ class ModelTrainer:
         self.val_loader = DataLoader(val_ds, batch_size=EVAL_BATCH_SIZE)
         self.n = next(iter(self.val_loader))[0].shape[1] # original space dimension
 
+        # Training stuff
+        self.optim = torch.optim.Adam(model.parameters(), lr=config["lr"], weight_decay=config["weight_decay"])
+        self.scheduler = StepLR(self.optim, step_size=config.get("scheduler_step_size", 20), gamma=config.get("scheduler_gamma", 1))
+
         # Training method
         training_method = config["training_method"]
         if training_method == "normal":
@@ -190,9 +194,7 @@ class ModelTrainer:
                 self.train_epoch = self.alternate_epoch
                 X_train = train_ds[:][0]
                 self.X_t = X_train.cpu().numpy()
-
-                self.Htu = np.zeros(len(self.X_t))
-                self.lamt = np.zeros(len(self.X_t))
+                self.X_t_tensor = X_train.to(self.device)
 
                 self.spright_support = np.zeros((1,self.n))
                 self.spright_coef = np.zeros((1,1))
@@ -201,17 +203,8 @@ class ModelTrainer:
             self.train_epoch = self.hashing_epoch
             self.hash_loss = HashingLoss(self.n, config["b"], device=device)
 
-
-        elif training_method == "bounded_hashing":
-            self.train_epoch = self.hashing_epoch
-            self.hash_loss = HashingLoss(self.n, config["b"], config["deg_bound"], device=device)
-            
         else:
             raise Exception(f"'{training_method}' training method is not yet implemented.")
-
-        # Training stuff
-        self.optim = torch.optim.Adam(model.parameters(), lr=config["lr"], weight_decay=config["weight_decay"])
-        self.scheduler = StepLR(self.optim, step_size=config.get("scheduler_step_size", 20), gamma=config.get("scheduler_gamma", 1))
 
         # Fourier of network
         if self.report_epoch_fourier:
@@ -283,8 +276,13 @@ class ModelTrainer:
 
             # Logging
             if self.print_logs:
+                sparsity_loss = ""
+                for log_att in epoch_log.keys():
+                    if len(log_att.split("_")) == 2 and log_att.split("_")[1] == "loss":
+                        sparsity_loss = f"{log_att}: {epoch_log[log_att]:.5f}"
+
                 print(f"#{epoch} - Train Loss: {epoch_log['train_mse_loss']:.3f}, R2: {epoch_log['train_r2']:.3f}"\
-                    f"\tValidation Loss: {epoch_log['val_mse_loss']:.3f}, R2: {epoch_log['val_r2']:.3f}")
+                    f"\tValidation Loss: {epoch_log['val_mse_loss']:.3f}, R2: {epoch_log['val_r2']:.3f}\t{sparsity_loss}")
             if self.log_wandb:
                 wandb.log(epoch_log)
 
@@ -449,7 +447,7 @@ class ModelTrainer:
         
         return RSS, {}
     
-    def hashing_epoch(self, limit_deg=None):
+    def hashing_epoch(self):
         device = self.device
         batch_hadamard_loss = []
         hadamard_times = []
@@ -463,10 +461,15 @@ class ModelTrainer:
 
             # Compute the Hadamard transform of sample_inputs and add to loss
             hadamard_start = time.time()
-            hadamard_loss = self.hash_loss.compute_loss(self.model)
+
+            hadamard_loss = 0
+            hash_repetition = self.config.get("hash_repetition", 1)
+            for i in range(hash_repetition):
+                hadamard_loss += self.hash_loss.compute_loss(self.model)
+            loss += self.config["hadamard_lambda"] * hadamard_loss / hash_repetition
+
             hadamard_times.append(time.time() - hadamard_start)
-            batch_hadamard_loss.append(hadamard_loss.item())
-            loss += self.config["hadamard_lambda"] * hadamard_loss
+            batch_hadamard_loss.append(hadamard_loss.item() / hash_repetition)
 
             loss.backward()
             self.optim.step()
@@ -573,9 +576,16 @@ class ModelTrainer:
             RSS += torch.sum((y_hat-y)**2).item()
 
             # Fourier loss
-            M = make_system_simple(self.spright_support, X.cpu().numpy())
-            y_fourier = np.dot(M,self.spright_coef).flatten()
-            reg_loss = F.mse_loss(y_hat, torch.tensor(y_fourier, dtype=torch.float, device=device))
+            if self.config.get("intense_regularization", False):
+                y_t = self.model(self.X_t_tensor)
+                M = make_system_simple(self.spright_support, self.X_t)
+                y_fourier = np.dot(M,self.spright_coef).flatten()
+                reg_loss = F.mse_loss(y_t, torch.tensor(y_fourier, dtype=torch.float, device=device))
+            else:
+                M = make_system_simple(self.spright_support, X.cpu().numpy())
+                y_fourier = np.dot(M,self.spright_coef).flatten()
+                reg_loss = F.mse_loss(y_hat, torch.tensor(y_fourier, dtype=torch.float, device=device))
+            
             loss += self.config["hadamard_lambda"] * reg_loss
             batch_hadamard_loss.append(reg_loss.item())
 

@@ -1,14 +1,18 @@
-program: avGFP.py
+program: real_dataset.py
 method: grid
-name: avGFP_spright
+name: ens
 metric:
   goal: maximize
   name: max_val_r2
 parameters:
+  dataset:
+    values: ['avGFP']
   training_method:
     values: ['EN-S']
+  network_c:
+    values: [1]
   b:
-    values: [10]
+    values: [5]
   SPRIGHT_d:
     values: [3]
   rho:
@@ -20,14 +24,16 @@ parameters:
   weight_decay:
     values: [0.0]
   num_epochs:
-    values: [50]
-  epoch_iterations:
-    values: [50]
+    values: [100]
+  batch_size:
+    values: [16]
   random_seed:
     values: [11, 22, 33, 44, 55]
   fix_seed:
     values: [1, 2, 3]
-  fix_dataset:
-    values: [True]
   train_size:
-    values: [2000]
+    values: [200, 400, 600, 800, 1000]
+  val_size:
+    values: [20000]
+  normalize_data:
+    values: [True]

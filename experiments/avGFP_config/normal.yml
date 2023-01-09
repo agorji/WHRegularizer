@@ -1,25 +1,31 @@
-program: avGFP.py
+program: real_dataset.py
 method: grid
-name: avGFP_normal
+name: normal
 metric:
   goal: maximize
   name: max_val_r2
 parameters:
+  dataset:
+    values: ['avGFP']
   training_method:
     values: ['normal']
+  network_c:
+    values: [1]
   lr:
-    values: [0.01, 0.001]
+    values: [0.01]
   weight_decay:
     values: [0.0]
   num_epochs:
-    values: [500]
-  epoch_iterations:
-    values: [25]
+    values: [200]
+  batch_size:
+    values: [16]
   random_seed:
     values: [11, 22, 33, 44, 55]
   fix_seed:
     values: [1, 2, 3]
-  fix_dataset:
-    values: [True]
   train_size:
-    values: [500, 1000, 2000]
+    values: [200, 400, 600, 800, 1000]
+  val_size:
+    values: [20000]
+  normalize_data:
+    values: [True]
