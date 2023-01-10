@@ -9,7 +9,7 @@ import torch.nn.functional as F
 import wandb
 
 from utils import ModelTrainer
-from datasets import avGFPDataset, GB1Dataset, SGEMMDataset, EntacmaeaDataset
+from datasets import get_real_dataset
 
 class FCN(nn.Module):
     def __init__(self, n, width_coeff=2, batch_norm=False):
@@ -50,23 +50,14 @@ def main():
     config = wandb.config
 
     # Dataset
-    if config["dataset"] == "GB1":
-        dataset = GB1Dataset()
-    elif config["dataset"] == "avGFP":
-        dataset = avGFPDataset()
-    elif config["dataset"] == "SGEMM":
-        dataset = SGEMMDataset()
-    elif config["dataset"] == "Entacmaea":
-        dataset = EntacmaeaDataset()
-    else:
-        raise Exception
+    dataset = get_real_dataset(config["dataset"])
     if config.get("normalize_data", False):
         dataset.y = (dataset.y-torch.mean(dataset.y))/torch.std(dataset.y)
     
     torch.manual_seed(config["fix_seed"])
-    config["val_size"] = config.get("val_size", len(dataset) - config["train_size"])
-    remainder = len(dataset) - config["train_size"] - config["val_size"]
-    train_ds, val_ds, _ = torch.utils.data.random_split(dataset, [config["train_size"], config["val_size"], remainder])
+    config["val_size"] = config.get("val_size", (len(dataset) - config["train_size"])//2)
+    remainder = len(dataset) - config["train_size"] - config["val_size"] * 2
+    train_ds, val_ds, test_ds, _ = torch.utils.data.random_split(dataset, [config["train_size"], config["val_size"], config["val_size"], remainder])
 
     # Train model
     remove_from_train_config = ["val_size"]
@@ -76,7 +67,7 @@ def main():
     in_dim = dataset.X.shape[1]
     model = FCN(in_dim, config["network_c"], batch_norm=config.get("batch_norm", False))
     trainer = ModelTrainer(model, train_ds, val_ds, config=train_config, log_wandb=True, checkpoint_cache=True, 
-                            experiment_name=config["dataset"])
+                            experiment_name=config["dataset"], test_ds=test_ds)
     model = trainer.train_model()
 
 if __name__ == "__main__":

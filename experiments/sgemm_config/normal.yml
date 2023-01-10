@@ -29,3 +29,5 @@ parameters:
     values: [20000]
   normalize_data:
     values: [True]
+  early_stopping:
+    values: [5]

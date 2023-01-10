@@ -12,13 +12,13 @@ parameters:
   network_c:
     values: [1]
   b:
-    values: [5]
+    values: [5, 7]
   SPRIGHT_d:
     values: [3]
   hadamard_lambda:
-    values: [0.5, 0.1, 0.01]
+    values: [0.1, 0.01]
   intense_regularization:
-    values: [True, False]
+    values: [True]
   lr:
     values: [0.01]
   weight_decay:

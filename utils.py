@@ -116,7 +116,7 @@ class HashingLoss:
 
 class ModelTrainer:
     def __init__(self, model: nn.Module, train_ds: Dataset, val_ds: Dataset, config: Dict, device = "cuda", log_wandb = False, checkpoint_cache=True, checkpoint_interval=25,
-                    report_epoch_fourier=False, print_logs=True, plot_results=False, experiment_name="default", **kwargs):
+                    report_epoch_fourier=False, print_logs=True, plot_results=False, experiment_name="default", test_ds: Dataset=None, **kwargs):
         '''
             Trains a torch model given the dataset and the training method.
 
@@ -138,6 +138,7 @@ class ModelTrainer:
         self.log_wandb = log_wandb
         self.train_ds = train_ds
         self.val_ds = val_ds
+        self.test_ds = test_ds
         self.report_epoch_fourier = report_epoch_fourier
         self.logs = []
         self.plot_results = plot_results
@@ -217,6 +218,11 @@ class ModelTrainer:
         val_mean_y = sum([torch.sum(y).item() for _, y in self.val_loader]) / len(val_ds)
         self.train_tss = sum([torch.sum((y-train_mean_y)**2).item() for _, y in self.train_loader])
         self.val_tss = sum([torch.sum((y-val_mean_y)**2).item() for _, y in self.val_loader])
+        if self.test_ds is not None:
+            self.test_loader = DataLoader(test_ds, batch_size=EVAL_BATCH_SIZE)
+            self.test_size = len(test_ds)
+            test_mean_y = sum([torch.sum(y).item() for _, y in self.test_loader]) / len(test_ds)
+            self.test_tss = sum([torch.sum((y-test_mean_y)**2).item() for _, y in self.test_loader])
 
     def train_model(self):
         device = self.device
@@ -225,6 +231,7 @@ class ModelTrainer:
         
         # Start from the latest epoch if available
         start_epoch = 0
+        worse_loss_count = 0 # Used to determine early stopping
         if self.checkpoint_cache:
             start_epoch = self.load_from_latest_checkpoint() + 1
 
@@ -268,6 +275,11 @@ class ModelTrainer:
             self.logs.append(epoch_log)
             epoch_log["max_val_r2"] = max([l["val_r2"] for l in self.logs])
             epoch_log["min_val_mse_loss"] = min([l["val_mse_loss"] for l in self.logs])
+            if self.test_ds is not None:
+                epoch_log["max_test_r2"] = max([l["test_r2"] for l in self.logs])
+                epoch_log["min_test_mse_loss"] = min([l["test_mse_loss"] for l in self.logs])
+                best_model_ind = np.argmin([l["val_mse_loss"] for l in self.logs])
+                epoch_log["best_test_r2"] = self.logs[best_model_ind]["test_r2"]
             if self.report_epoch_fourier:
                 epoch_log["max_amp_r2"] = max([l["amp_r2"] for l in self.logs])
                 epoch_log["min_signal_error"] = min([l["signal_error"] for l in self.logs])
@@ -295,6 +307,13 @@ class ModelTrainer:
                 # Interval checkpoints
                 if (epoch % self.checkpoint_interval == 0) or (epoch == self.config["num_epochs"]-1):
                     self.save_model(epoch)
+            
+            # Early stop
+            best_model_ind = np.argmin([l["val_mse_loss"] for l in self.logs])
+            if epoch - best_model_ind >= self.config.get("early_stopping", math.inf):
+                print("Halted because of early stopping.")
+                self.save_model(epoch)
+                break
         
         if self.plot_results:
             self.plot_logs()
@@ -318,7 +337,12 @@ class ModelTrainer:
         }
     
     def evaluate_epoch(self):
-        return self.evaluate_model(self.val_loader, self.val_size, self.val_tss)
+        val_evaluation = self.evaluate_model(self.val_loader, self.val_size, self.val_tss)
+        if self.test_ds is not None:
+            test_evaluation = self.evaluate_model(self.test_loader, self.test_size, self.test_tss)
+            val_evaluation.update({k.replace("val_","test_"): v for k, v in test_evaluation.items()})
+        
+        return val_evaluation
     
     def evaluate_model_on_dataset(self, val_ds):
         val_loader = DataLoader(val_ds, batch_size=EVAL_BATCH_SIZE)

@@ -10,6 +10,18 @@ from sklearn.preprocessing import OneHotEncoder
 
 DATA_PATH = Path(__file__).parent / "data"
 
+def get_real_dataset(dataset_name):
+    if dataset_name == "GB1":
+        return GB1Dataset()
+    elif dataset_name == "avGFP":
+        return avGFPDataset()
+    elif dataset_name == "SGEMM":
+        return SGEMMDataset()
+    elif dataset_name == "Entacmaea":
+        return EntacmaeaDataset()
+    else:
+        raise Exception(f"{dataset_name} is not among available real datasets.")
+
 class FourierDataset(Dataset):
     def __init__(self, n, k, freq_sampling_method="uniform_deg", amp_sampling_method="random", d=None, p_freq=None, n_samples = 100, p_t=0.5, 
                 random_seed=0, use_cache=True, freq_seed=None):
@@ -335,7 +347,7 @@ class SGEMMDataset(Dataset):
             torch.save((self.X, self.y), cache_file)
         
     def _one_hot_transform(self):
-        self.enc = OneHotEncoder(sparse=False, drop="if_binary")
+        self.enc = OneHotEncoder(sparse=False)
         self.X = self.enc.fit_transform(self.X)
         
     def __len__(self):

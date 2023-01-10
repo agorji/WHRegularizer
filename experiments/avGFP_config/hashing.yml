@@ -12,9 +12,9 @@ parameters:
   network_c:
     values: [1]
   b:
-    values: [7, 10, 13]
+    values: [7, 10, 13, 16]
   hadamard_lambda:
-    values: [0.01]
+    values: [0.01, 0.001, 0.0001]
   hash_repetition:
     values: [1]
   lr:
@@ -30,8 +30,10 @@ parameters:
   fix_seed:
     values: [1, 2, 3]
   train_size:
-    values: [200, 400, 600, 800, 1000]
+    values: [1200, 1400, 1600, 1800, 2000]
   val_size:
     values: [20000]
   normalize_data:
     values: [True]
+  early_stopping:
+    values: [5]

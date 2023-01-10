@@ -12,7 +12,7 @@ parameters:
   network_c:
     values: [1]
   b:
-    values: [5]
+    values: [5, 7]
   SPRIGHT_d:
     values: [3]
   rho:
@@ -32,8 +32,10 @@ parameters:
   fix_seed:
     values: [1, 2, 3]
   train_size:
-    values: [200, 400, 600, 800, 1000]
+    values: [1200, 1400, 1600, 1800, 2000]
   val_size:
     values: [20000]
   normalize_data:
     values: [True]
+  early_stopping:
+    values: [5]

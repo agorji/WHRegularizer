@@ -11,11 +11,13 @@ parameters:
   training_method:
     values: ['alternate']
   b:
-    values: [7]
+    values: [5, 7]
   SPRIGHT_d:
     values: [3]
   hadamard_lambda:
     values: [1, 0.1, 0.01]
+  intense_regularization:
+    values: [True]
   network_c:
     values: [10]
   lr:
@@ -36,3 +38,5 @@ parameters:
     values: [20000]
   normalize_data:
     values: [True]
+  early_stopping:
+    values: [5]
