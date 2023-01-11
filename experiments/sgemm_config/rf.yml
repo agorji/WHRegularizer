@@ -1,0 +1,23 @@
+program: ml.py
+method: grid
+name: rf
+metric:
+  goal: maximize
+  name: max_val_r2
+parameters:
+  dataset:
+    values: ['SGEMM']
+  training_method:
+    values: ['Random Forest']
+  rf_n_estimators:
+    values: [100, 200, 500, 1000]
+  rf_max_depth:
+    values: [10, 20, 30]
+  random_seed:
+    values: [11, 22, 33, 44, 55]
+  fix_seed:
+    values: [1, 2, 3, 4 , 5]
+  train_size:
+    values: [20, 40, 60, 80, 100, 120, 140, 160, 180, 200]
+  normalize_data:
+    values: [True]

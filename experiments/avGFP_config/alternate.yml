@@ -32,7 +32,7 @@ parameters:
   fix_seed:
     values: [1, 2, 3]
   train_size:
-    values: [200, 400, 600, 800, 1000]
+    values: [200, 400, 600, 800, 1000, 1200, 1400, 1600, 1800, 2000]
   val_size:
     values: [20000]
   normalize_data:
