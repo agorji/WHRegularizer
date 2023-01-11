@@ -1,5 +1,5 @@
 import numpy as np
-
+import torch
 
 class Fourier:
     """A class that maintains the Fourier transform and allows us to efficiently evaluate it
@@ -40,5 +40,16 @@ class Fourier:
         ret_value = (-1) ** (((x @ self.freq_matrix.T) % 2).squeeze())
         ret_value = (ret_value  @ self.amp_matrix).squeeze()
         return ret_value
+    
 
+    def compute_torch(self, x, device="cuda"):
+        if len(x.shape) ==1:
+            x = torch.reshape(x, newshape=(1, x.shape[0]))
+        
+        freq_matrix = torch.tensor(self.freq_matrix, dtype=torch.float, device=device)
+        amp_matrix = torch.tensor(self.amp_matrix, dtype=torch.float, device=device)
+
+        ret_value = (-1) ** (((x @ freq_matrix.T) % 2))
+        ret_value = (ret_value  @ amp_matrix).squeeze()
+        return ret_value
 

@@ -21,6 +21,8 @@ import wandb
 
 from epistatic_net.spright_utils import SPRIGHT, make_system_simple
 from epistatic_net.wht_sampling import SPRIGHTSample
+from sample_optimal_sparse_hadamard.fourier_extractor import get_fourier_time_samples_with_dummy_function, compute_fourier
+from sample_optimal_sparse_hadamard.fourier import Fourier
 
 EVAL_BATCH_SIZE = 204800
 
@@ -175,7 +177,7 @@ class ModelTrainer:
             if training_method == "bounded_EN":
                 self.H = self.H[get_bounded_degree_indices(self.n, config["deg_bound"])]
 
-        elif training_method == "EN-S" or training_method == "alternate":
+        elif training_method == "EN-S":
             self.train_epoch = self.ENS_epoch
             self.spright_sample = SPRIGHTSample(self.n, config["b"], config["SPRIGHT_d"], random_seed=config["random_seed"])
             self.X_fourier = np.concatenate(
@@ -191,14 +193,32 @@ class ModelTrainer:
             self.Hu = np.zeros(len(self.X_fourier))
             self.lam = np.zeros(len(self.X_fourier))
 
-            if training_method == "alternate":
-                self.train_epoch = self.alternate_epoch
-                X_train = train_ds[:][0]
-                self.X_t = X_train.cpu().numpy()
-                self.X_t_tensor = X_train.to(self.device)
+        elif training_method == "alternate":
+            self.train_epoch = self.alternate_epoch
+            self.fourier_method = config.get("fourier_method", "SPRIGHT")
+            self.warmup_epochs = config.get("warmup_epochs", 0)
+
+            X_train = train_ds[:][0]
+            self.X_t = X_train.cpu().numpy()
+            self.X_t_tensor = X_train.to(self.device)
+
+            if self.fourier_method == "SPRIGHT":
+                self.spright_sample = SPRIGHTSample(self.n, config["b"], config["SPRIGHT_d"], random_seed=config["random_seed"])
+                self.X_fourier = np.concatenate(
+                    (
+                        np.vstack(self.spright_sample.sampling_locations[0]),
+                        np.vstack(self.spright_sample.sampling_locations[1]),
+                        np.vstack(self.spright_sample.sampling_locations[2])
+                    )
+                )
+                self.X_fourier, self.X_fourier_inverse_ind = np.unique(self.X_fourier, axis=0, return_inverse='True')
 
                 self.spright_support = np.zeros((1,self.n))
                 self.spright_coef = np.zeros((1,1))
+            else:
+                samples = get_fourier_time_samples_with_dummy_function(self.n, 2**self.config["b"], self.config["fourier_d"], random_seed=config["random_seed"])
+                self.X_fourier = torch.tensor(samples, dtype=torch.float, device=device)
+                self.fourier = Fourier({tuple([0]*self.n):0})
 
         elif training_method == "hashing":
             self.train_epoch = self.hashing_epoch
@@ -249,7 +269,7 @@ class ModelTrainer:
             # Train epoch
             self.model.train()
             epoch_start = time.time()
-            RSS, epoch_log = self.train_epoch()
+            RSS, epoch_log = self.train_epoch(epoch)
             epoch_log["train_time"] = time.time() - epoch_start
             epoch_log["train_mse_loss"] = RSS / self.train_size
             epoch_log["train_r2"] = 1 - RSS / self.train_tss
@@ -456,7 +476,7 @@ class ModelTrainer:
 
         return latest_epoch
     
-    def normal_epoch(self):
+    def normal_epoch(self, epoch):
         device = self.device
         RSS = 0
         for X, y in self.train_loader:
@@ -471,7 +491,7 @@ class ModelTrainer:
         
         return RSS, {}
     
-    def hashing_epoch(self):
+    def hashing_epoch(self, epoch):
         device = self.device
         batch_hadamard_loss = []
         hadamard_times = []
@@ -504,7 +524,7 @@ class ModelTrainer:
             'hashing_loss': np.mean(batch_hadamard_loss),
         }
     
-    def EN_epoch(self):
+    def EN_epoch(self, epoch):
         device = self.device
         batch_hadamard_loss = []
         hadamard_times = []
@@ -535,7 +555,7 @@ class ModelTrainer:
             'EN_loss': torch.mean(torch.stack(batch_hadamard_loss)).item(),
         }
     
-    def ENS_epoch(self):
+    def ENS_epoch(self, epoch):
         device = self.device
         l2_loss = nn.MSELoss()
         batch_hadamard_loss = []
@@ -586,9 +606,8 @@ class ModelTrainer:
             'ENS_loss': np.mean(batch_hadamard_loss),
         }
 
-    def alternate_epoch(self):
+    def alternate_epoch(self, epoch):
         device = self.device
-        l2_loss = nn.MSELoss()
         batch_hadamard_loss = []
         RSS = 0
         network_update_time = time.time()
@@ -601,38 +620,71 @@ class ModelTrainer:
 
             # Fourier loss
             if self.config.get("intense_regularization", False):
-                y_t = self.model(self.X_t_tensor)
-                M = make_system_simple(self.spright_support, self.X_t)
-                y_fourier = np.dot(M,self.spright_coef).flatten()
-                reg_loss = F.mse_loss(y_t, torch.tensor(y_fourier, dtype=torch.float, device=device))
+                X_loss = self.X_t_tensor
+                y_loss = self.model(self.X_t_tensor)
             else:
-                M = make_system_simple(self.spright_support, X.cpu().numpy())
-                y_fourier = np.dot(M,self.spright_coef).flatten()
-                reg_loss = F.mse_loss(y_hat, torch.tensor(y_fourier, dtype=torch.float, device=device))
-            
-            loss += self.config["hadamard_lambda"] * reg_loss
+                X_loss = X
+                y_loss = y
+
+            if self.fourier_method == "SPRIGHT":
+                M = make_system_simple(self.spright_support, X_loss.cpu().numpy())
+                y_fourier = torch.tensor(np.dot(M, self.spright_coef).flatten(), dtype=torch.float, device=device)
+            elif self.fourier_method == "swht":
+                y_fourier = self.fourier.compute_torch(X_loss, device=self.device)
+
+            reg_loss = F.mse_loss(y_loss, y_fourier)
+            if epoch >= self.warmup_epochs:
+                loss += self.config["hadamard_lambda"] * reg_loss
             batch_hadamard_loss.append(reg_loss.item())
 
             loss.backward()
             self.optim.step()
+
         network_update_time = time.time() - network_update_time
         
         hadamard_start = time.time()
 
-        with torch.no_grad():
-            y_hat_fourier = self.model(torch.tensor(self.X_fourier, dtype=torch.float, device=device))
-            y_hat_fourier = y_hat_fourier.cpu().numpy().flatten()
+        if epoch >= self.warmup_epochs - 1:
+            with torch.no_grad():
+                X_fourier = self.X_fourier if torch.is_tensor(self.X_fourier) else torch.tensor(self.X_fourier, dtype=torch.float, device=device)
+                y_hat_fourier = self.model(X_fourier)
+                y_hat_fourier = y_hat_fourier.cpu().numpy().flatten()
 
-        # run spright to do fast sparse WHT
+        # Update fourier estimation
         fourier_start = time.time()
-        spright = SPRIGHT('frame', [1,2,3], self.spright_sample)
-        spright.set_train_data(self.X_fourier,  y_hat_fourier, self.X_fourier_inverse_ind)
+        if epoch >= self.warmup_epochs - 1:
+            sample_inds = random.sample(range(X_fourier.shape[0]), 1000)
+            if self.fourier_method == "SPRIGHT":
+                spright = SPRIGHT('frame', [1,2,3], self.spright_sample)
+                spright.set_train_data(self.X_fourier,  y_hat_fourier, self.X_fourier_inverse_ind)
 
-        flag = spright.initial_run()
-        if flag:
-            spright.peel_rest()
-            self.spright_support = spright.model.support
-            self.spright_coef = spright.model.coef_
+                flag = spright.initial_run()
+                if flag:
+                    spright.peel_rest()
+                    self.spright_support = spright.model.support
+                    self.spright_coef = spright.model.coef_
+
+                M = make_system_simple(self.spright_support, self.X_fourier[sample_inds])
+                y_fourier = np.dot(M, self.spright_coef).flatten()
+                M = make_system_simple(self.spright_support, self.X_t)
+                y_fourier_train = np.dot(M, self.spright_coef).flatten()
+
+            elif self.fourier_method == "swht":
+                extracted_fourier = compute_fourier(self.n, 2**self.config["b"], self.config["fourier_d"], y_hat_fourier, 
+                                                    random_seed=self.config["random_seed"])
+                self.fourier = Fourier(extracted_fourier)
+                y_fourier = self.fourier.compute_torch(X_fourier[sample_inds]).cpu().numpy()
+                y_fourier_train = self.fourier.compute_torch(self.X_t_tensor).cpu().numpy()
+            
+            with torch.no_grad():
+                y_hat_fourier_train = self.model(self.X_t_tensor).cpu().numpy()
+
+            fourier_quality_sample = r2_score(y_hat_fourier[sample_inds], y_fourier)
+            fourier_quality_train= r2_score(y_hat_fourier_train, y_fourier_train)
+            print(f"Fourier quality:\tSample R2:{fourier_quality_sample:.3f}\t"
+                    f"Train R2:{fourier_quality_train:.3f}")
+        else:
+            fourier_quality_sample, fourier_quality_train = 0
 
         fourier_time = time.time() - fourier_start
         hadamard_time = time.time() - hadamard_start
@@ -642,4 +694,6 @@ class ModelTrainer:
             'hadamard_time': hadamard_time,
             'fourier_time': fourier_time,
             'alternate_loss': np.mean(batch_hadamard_loss),
+            'fourier_quality_sample': fourier_quality_sample,
+            'fourier_quality_train': fourier_quality_train,
         }
