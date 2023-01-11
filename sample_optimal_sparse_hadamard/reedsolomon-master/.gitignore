@@ -1,0 +1,7 @@
+.project
+.pydevproject
+*.py[c|d]
+__pycache__
+*.egg-info
+dist/
+build/
