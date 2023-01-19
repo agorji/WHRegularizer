@@ -1,29 +1,37 @@
-program: gb1.py
+program: real_dataset.py
 method: grid
-name: gb1_hash
+name: hashing
 metric:
   goal: maximize
   name: max_val_r2
 parameters:
+  dataset:
+    values: ['GB1']
   training_method:
     values: ['hashing']
   b:
-    values: [7, 8, 9, 11, 13]
+    values: [7, 10, 13, 16]
   hadamard_lambda:
-    values: [0.0001, 0.001]
+    values: [0.01, 0.001]
+  network_c:
+    values: [10]
   lr:
     values: [0.01]
   weight_decay:
     values: [0.0]
   num_epochs:
-    values: [500]
-  epoch_iterations:
-    values: [50, 100]
+    values: [200]
+  batch_size:
+    values: [16]
   random_seed:
     values: [11, 22, 33, 44, 55]
   fix_seed:
-    values: [1, 2, 3]
-  fix_dataset:
-    values: [True]
+    values: [1, 2, 3, 4 , 5]
   train_size:
-    values: [2000]
+    values: [200, 400, 600, 800, 1000, 1200, 1400, 1600, 1800, 2000]
+  val_size:
+    values: [20000]
+  normalize_data:
+    values: [True]
+  early_stopping:
+    values: [5]

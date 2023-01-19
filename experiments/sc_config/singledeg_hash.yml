@@ -10,11 +10,11 @@ parameters:
   n:
     values: [10]
   d:
-    values: [4, 5]
+    values: [5]
   hashing_discount:
     values: [1, 2, 4]
   hadamard_lambda:
-    values: [0.01, 0.001]
+    values: [0.1, 1]
   lr:
     values: [0.01]
   weight_decay:

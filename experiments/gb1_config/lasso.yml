@@ -1,6 +1,6 @@
-program: real_dataset.py
+program: ml.py
 method: grid
-name: normal
+name: lasso
 metric:
   goal: maximize
   name: max_val_r2
@@ -8,26 +8,14 @@ parameters:
   dataset:
     values: ['GB1']
   training_method:
-    values: ['normal']
-  network_c:
-    values: [10]
-  lr:
-    values: [0.01]
-  weight_decay:
-    values: [0.0]
-  num_epochs:
-    values: [200]
-  batch_size:
-    values: [16]
+    values: ['Lasso']
+  lasso_alpha:
+    values: [1e-5, 1e-4, 1e-3, 1e-2, 1e-1, 1]
   random_seed:
     values: [11, 22, 33, 44, 55]
   fix_seed:
     values: [1, 2, 3, 4 , 5]
   train_size:
     values: [200, 400, 600, 800, 1000, 1200, 1400, 1600, 1800, 2000]
-  val_size:
-    values: [20000]
   normalize_data:
     values: [True]
-  early_stopping:
-    values: [5]
