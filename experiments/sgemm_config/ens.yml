@@ -39,4 +39,4 @@ parameters:
   normalize_data:
     values: [True]
   early_stopping:
-    values: [5]
+    values: [10]

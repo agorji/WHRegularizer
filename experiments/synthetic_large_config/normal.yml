@@ -1,0 +1,37 @@
+program: synthetic.py
+method: grid
+name: normal
+metric:
+  goal: maximize
+  name: max_val_r2
+parameters:
+  n:
+    values: [25, 50, 100]
+  k:
+    values: [25]
+  d:
+    values: [5]
+  training_method:
+    values: ['normal']
+  network_c:
+    values: [2]
+  lr:
+    values: [0.01]
+  weight_decay:
+    values: [0.0]
+  num_epochs:
+    values: [500]
+  batch_size:
+    values: [128]
+  random_seed:
+    values: [11, 22, 33, 44, 55]
+  sample_seed:
+    values: [11, 22, 33, 44, 55]
+  fix_seed:
+    values: [1, 2, 3]
+  dataset_size_coef:
+    values: [1, 2, 3, 4, 5, 6, 7, 8]
+  normalize_data:
+    values: [True]
+  early_stopping:
+    values: [10]

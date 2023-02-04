@@ -30,7 +30,7 @@ parameters:
   random_seed:
     values: [11, 22, 33, 44, 55]
   fix_seed:
-    values: [4, 5]
+    values: [1, 2, 3, 4 , 5]
   train_size:
     values: [200, 400, 600, 800, 1000, 1200, 1400, 1600, 1800, 2000]
   val_size:
@@ -38,4 +38,4 @@ parameters:
   normalize_data:
     values: [True]
   early_stopping:
-    values: [5]
+    values: [10]

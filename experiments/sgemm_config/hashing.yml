@@ -10,9 +10,9 @@ parameters:
   training_method:
     values: ['hashing']
   b:
-    values: [7, 10, 13, 16]
+    values: [7, 10, 13]
   hadamard_lambda:
-    values: [0.01, 0.001]
+    values: [0.01, 0.001, 0.0001]
   network_c:
     values: [10]
   lr:
@@ -34,4 +34,4 @@ parameters:
   normalize_data:
     values: [True]
   early_stopping:
-    values: [5]
+    values: [10]

@@ -251,9 +251,14 @@ class ModelTrainer:
         
         # Start from the latest epoch if available
         start_epoch = 0
-        worse_loss_count = 0 # Used to determine early stopping
         if self.checkpoint_cache:
             start_epoch = self.load_from_latest_checkpoint() + 1
+            if start_epoch > 0:
+                # Early stop
+                best_model_ind = np.argmin([l["val_mse_loss"] for l in self.logs])
+                if start_epoch - 1 - best_model_ind >= self.config.get("early_stopping", math.inf):
+                    print("Halted because of early stopping.")
+                    return
 
         # Compute the Fourier spectrum of Model before training
         if self.report_epoch_fourier:
@@ -398,6 +403,8 @@ class ModelTrainer:
 
         keys_to_ignore = ["num_epochs"]
         config_to_hash = {k:v for k, v in self.config.items() if k not in keys_to_ignore}
+        if "early_stopping" in config_to_hash:
+            config_to_hash["early_stopping"] = 5
         config_hash = hash_dict(config_to_hash)
 
         model_dir = f"{data_directory}/checkpoints/{self.experiment_name}/{config_hash}/"
