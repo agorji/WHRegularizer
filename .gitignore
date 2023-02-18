@@ -135,7 +135,7 @@ cache/
 
 # Data files
 data/
-experiments/plots/files/*
+files/
 
 # Bash scripts
 *.sh

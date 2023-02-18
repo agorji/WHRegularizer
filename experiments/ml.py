@@ -13,6 +13,7 @@ from sklearn.ensemble import RandomForestRegressor
 from sklearn.metrics import r2_score, mean_squared_error
 from xgboost import XGBRegressor
 import wandb
+import time
 
 from datasets import get_real_dataset
 
@@ -43,7 +44,9 @@ def main():
     else:
         raise Exception(f"Method {config['training_method']} is not supported.")
 
+    start_time = time.time()
     model.fit(train_ds[:][0].cpu().numpy(), train_ds[:][1].cpu().numpy())
+    train_time = time.time() - start_time
 
     train_pred = model.predict(train_ds[:][0].cpu().numpy())
     val_pred = model.predict(val_ds[:][0].cpu().numpy())
@@ -57,6 +60,7 @@ def main():
             "val_r2": r2_score(val_ds[:][1].cpu().numpy(), val_pred),
             "test_mse_loss": mean_squared_error(test_ds[:][1].cpu().numpy(), test_pred),
             "test_r2": r2_score(test_ds[:][1].cpu().numpy(), test_pred),
+            "train_time": train_time,
         }
     log["min_train_mse_loss"] = log["train_mse_loss"]
     log["min_val_mse_loss"] = log["val_mse_loss"]

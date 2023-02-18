@@ -1,0 +1,19 @@
+program: ablation.py
+method: grid
+name: SGEMM
+metric:
+  goal: maximize
+  name: val_r2
+parameters:
+  dataset:
+    values: ['SGEMM']
+  rf_n_estimators:
+    values: [100]
+  rf_max_depth:
+    values: [7, 8, 10]
+  random_seed:
+    values: [1]
+  train_size:
+    values: [50000, 100000]
+  val_size:
+    values: [5000]
